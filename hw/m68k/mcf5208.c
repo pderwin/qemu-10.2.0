@@ -13,7 +13,6 @@
  * "M5208EVB-RevB 32-bit Microcontroller User Manual"
  * https://www.nxp.com/docs/en/reference-manual/M5208EVBUM.pdf
  */
-
 #include "qemu/osdep.h"
 #include "qemu/units.h"
 #include "qemu/error-report.h"
@@ -36,7 +35,7 @@
 
 #define SYS_FREQ 166666666
 
-#define ROM_SIZE 0x200000
+#define ROM_SIZE 0x20000
 
 #define PCSR_EN         0x0001
 #define PCSR_RLD        0x0002
@@ -274,6 +273,9 @@ static void mcf_fec_init(MemoryRegion *sysmem, hwaddr base, qemu_irq *irqs)
     memory_region_add_subregion(sysmem, base, sysbus_mmio_get_region(s, 0));
 }
 
+static Chardev
+   sim_dev;
+
 static void mcf5208evb_init(MachineState *machine)
 {
     ram_addr_t ram_size = machine->ram_size;
@@ -296,15 +298,15 @@ static void mcf5208evb_init(MachineState *machine)
     /* TODO: Configure BARs.  */
 
     /* ROM at 0x00000000 */
-    memory_region_init_rom(rom, NULL, "mcf5208.rom", ROM_SIZE, &error_fatal);
+    memory_region_init_rom(rom, NULL, "firmware.rom", ROM_SIZE, &error_fatal);
     memory_region_add_subregion(address_space_mem, 0x00000000, rom);
 
     /* DRAM at 0x40000000 */
     memory_region_add_subregion(address_space_mem, 0x40000000, machine->ram);
 
     /* Internal SRAM.  */
-    memory_region_init_ram(sram, NULL, "mcf5208.sram", 16 * KiB, &error_fatal);
-    memory_region_add_subregion(address_space_mem, 0x80000000, sram);
+    memory_region_init_ram(sram, NULL, "firmware.bin" , 128 * KiB, &error_fatal);
+    memory_region_add_subregion(address_space_mem, 0x40000, sram);
 
     /* Internal peripherals.  */
     pic = mcf_intc_init(address_space_mem, 0xfc048000, cpu);
@@ -312,6 +314,8 @@ static void mcf5208evb_init(MachineState *machine)
     mcf_uart_create_mmap(0xfc060000, pic[26], serial_hd(0));
     mcf_uart_create_mmap(0xfc064000, pic[27], serial_hd(1));
     mcf_uart_create_mmap(0xfc068000, pic[28], serial_hd(2));
+
+    mcf_sim_create_mmap(0xfffffa00, &sim_dev);
 
     mcf5208_sys_init(address_space_mem, pic, cpu);
 

@@ -310,6 +310,27 @@ const char *qemu_plugin_insn_symbol(const struct qemu_plugin_insn *insn)
     return sym[0] != 0 ? sym : NULL;
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        qemu_plugin_hwaddr_symbol
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:      None
+ *
+ *-------------------------------------------------------------------------*/
+uint32_t qemu_plugin_hwaddr_symbol(uint32_t hwaddr, char *buf, uint32_t buf_siz)
+{
+   uint32_t
+      rc;
+
+    rc = lookup_symbol_r(hwaddr, buf, buf_siz);
+
+    return rc;
+}
+
 /*
  * The memory queries allow the plugin to query information about a
  * memory access.
@@ -643,4 +664,3 @@ uint64_t qemu_plugin_u64_sum(qemu_plugin_u64 entry)
     }
     return total;
 }
-

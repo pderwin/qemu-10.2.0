@@ -159,9 +159,10 @@ static void glue(load_symbols, SZ)(struct elfhdr *ehdr, int fd, int must_swab,
         }
         /* We are only interested in function symbols.
            Throw everything else away.  */
-        if (syms[i].st_shndx == SHN_UNDEF ||
-                syms[i].st_shndx >= SHN_LORESERVE ||
-                ELF_ST_TYPE(syms[i].st_info) != STT_FUNC) {
+	/*
+	 * Erwin: Removed test for the symbol to be required as a function.  (STT_FUNC)
+	 */
+	if (syms[i].st_shndx == SHN_UNDEF || syms[i].st_shndx >= SHN_LORESERVE ) {
             nsyms--;
             if (i < nsyms) {
                 syms[i] = syms[nsyms];

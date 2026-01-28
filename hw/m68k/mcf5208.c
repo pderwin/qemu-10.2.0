@@ -35,7 +35,7 @@
 
 #define SYS_FREQ 166666666
 
-#define ROM_SIZE 0x20000
+#define ROM_SIZE 0x40000
 
 #define PCSR_EN         0x0001
 #define PCSR_RLD        0x0002
@@ -274,6 +274,7 @@ static void mcf_fec_init(MemoryRegion *sysmem, hwaddr base, qemu_irq *irqs)
 }
 
 static Chardev
+   qsm_dev,
    sim_dev;
 
 static void mcf5208evb_init(MachineState *machine)
@@ -297,8 +298,8 @@ static void mcf5208evb_init(MachineState *machine)
     env->vbr = 0;
     /* TODO: Configure BARs.  */
 
-    /* ROM at 0x00000000 */
-    memory_region_init_rom(rom, NULL, "firmware.rom", ROM_SIZE, &error_fatal);
+    /* RAM at 0x00000000 */
+    memory_region_init_ram(rom, NULL, "firmware.rom", ROM_SIZE, &error_fatal);
     memory_region_add_subregion(address_space_mem, 0x00000000, rom);
 
     /* DRAM at 0x40000000 */
@@ -316,6 +317,7 @@ static void mcf5208evb_init(MachineState *machine)
     mcf_uart_create_mmap(0xfc068000, pic[28], serial_hd(2));
 
     mcf_sim_create_mmap(0xfffffa00, &sim_dev);
+    mcf_qsm_create_mmap(  0xfffc00, pic[1], &qsm_dev);  // user-defined vector 1, or vector number 65
 
     mcf5208_sys_init(address_space_mem, pic, cpu);
 
@@ -393,6 +395,7 @@ static void mcf5208evb_init(MachineState *machine)
     }
 
     env->pc = entry;
+    env->aregs[7] = 0x3fffc;
 }
 
 static void mcf5208evb_machine_init(MachineClass *mc)

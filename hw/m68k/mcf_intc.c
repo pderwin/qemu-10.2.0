@@ -1,6 +1,9 @@
 /*
  * ColdFire Interrupt Controller emulation.
  *
+ * NOTE: only implements the first 64 of the user interrupts.  This
+ *       maps to vectors 64 through 128 in the CPU vector table.
+ *
  * Copyright (c) 2007 CodeSourcery.
  *
  * This code is licensed under the GPL
@@ -25,7 +28,6 @@ struct mcf_intc_state {
 
     MemoryRegion iomem;
     uint64_t ipr;
-    uint64_t imr;
     uint64_t ifr;
     uint64_t enabled;
     uint8_t icr[64];
@@ -40,9 +42,10 @@ static void mcf_intc_update(mcf_intc_state *s)
     int best;
     int best_level;
 
-    active = (s->ipr | s->ifr) & s->enabled & ~s->imr;
-    best_level = 0;
+    active = s->ipr;
+    best_level = 1;
     best = 64;
+
     if (active) {
         for (i = 0; i < 64; i++) {
             if ((active & 1) != 0 && s->icr[i] >= best_level) {
@@ -52,102 +55,39 @@ static void mcf_intc_update(mcf_intc_state *s)
             active >>= 1;
         }
     }
+
+    /*
+     * User vectors start at number 64
+     */
     s->active_vector = ((best == 64) ? 24 : (best + 64));
+//    printf("%s %d av: %d \n", __func__, __LINE__, s->active_vector );
+
     m68k_set_irq_level(s->cpu, best_level, s->active_vector);
+
+//    printf("%s %d IIIIIIIIIIIIII done \n", __func__, __LINE__);
 }
 
-static uint64_t mcf_intc_read(void *opaque, hwaddr addr,
-                              unsigned size)
+void mcf_intc_set_level(void *opaque, uint32_t irq, uint32_t level)
 {
-    int offset;
-    mcf_intc_state *s = (mcf_intc_state *)opaque;
-    offset = addr & 0xff;
-    if (offset >= 0x40 && offset < 0x80) {
-        return s->icr[offset - 0x40];
-    }
-    switch (offset) {
-    case 0x00:
-        return (uint32_t)(s->ipr >> 32);
-    case 0x04:
-        return (uint32_t)s->ipr;
-    case 0x08:
-        return (uint32_t)(s->imr >> 32);
-    case 0x0c:
-        return (uint32_t)s->imr;
-    case 0x10:
-        return (uint32_t)(s->ifr >> 32);
-    case 0x14:
-        return (uint32_t)s->ifr;
-    case 0xe0: /* SWIACK.  */
-        return s->active_vector;
-    case 0xe1: case 0xe2: case 0xe3: case 0xe4:
-    case 0xe5: case 0xe6: case 0xe7:
-        /* LnIACK */
-        qemu_log_mask(LOG_UNIMP, "%s: LnIACK not implemented (offset 0x%02x)\n",
-                      __func__, offset);
-        /* fallthru */
-    default:
-        return 0;
-    }
-}
+   mcf_intc_state *s = (mcf_intc_state *)opaque;
 
-static void mcf_intc_write(void *opaque, hwaddr addr,
-                           uint64_t val, unsigned size)
-{
-    int offset;
-    mcf_intc_state *s = (mcf_intc_state *)opaque;
-    offset = addr & 0xff;
-    if (offset >= 0x40 && offset < 0x80) {
-        int n = offset - 0x40;
-        s->icr[n] = val;
-        if (val == 0)
-            s->enabled &= ~(1ull << n);
-        else
-            s->enabled |= (1ull << n);
-        mcf_intc_update(s);
-        return;
-    }
-    switch (offset) {
-    case 0x00: case 0x04:
-        /* Ignore IPR writes.  */
-        return;
-    case 0x08:
-        s->imr = (s->imr & 0xffffffff) | ((uint64_t)val << 32);
-        break;
-    case 0x0c:
-        s->imr = (s->imr & 0xffffffff00000000ull) | (uint32_t)val;
-        break;
-    case 0x1c:
-        if (val & 0x40) {
-            s->imr = ~0ull;
-        } else {
-            s->imr |= (0x1ull << (val & 0x3f));
-        }
-        break;
-    case 0x1d:
-        if (val & 0x40) {
-            s->imr = 0ull;
-        } else {
-            s->imr &= ~(0x1ull << (val & 0x3f));
-        }
-        break;
-    default:
-        qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%02x\n",
-                      __func__, offset);
-        return;
-    }
-    mcf_intc_update(s);
+   s->icr[irq] = level;
 }
 
 static void mcf_intc_set_irq(void *opaque, int irq, int level)
 {
     mcf_intc_state *s = (mcf_intc_state *)opaque;
+
+//    printf("%s %d SSSSSSSSSSSSS opaque: %p i: %d l: %d\n", __func__, __LINE__, opaque, irq, level);
+
     if (irq >= 64)
         return;
+
     if (level)
         s->ipr |= 1ull << irq;
     else
         s->ipr &= ~(1ull << irq);
+
     mcf_intc_update(s);
 }
 
@@ -155,7 +95,6 @@ static void mcf_intc_reset(DeviceState *dev)
 {
     mcf_intc_state *s = MCF_INTC(dev);
 
-    s->imr = ~0ull;
     s->ipr = 0;
     s->ifr = 0;
     s->enabled = 0;
@@ -164,8 +103,8 @@ static void mcf_intc_reset(DeviceState *dev)
 }
 
 static const MemoryRegionOps mcf_intc_ops = {
-    .read = mcf_intc_read,
-    .write = mcf_intc_write,
+//    .read = mcf_intc_read,
+//    .write = mcf_intc_write,
     .endianness = DEVICE_BIG_ENDIAN,
 };
 
@@ -213,8 +152,12 @@ qemu_irq *mcf_intc_init(MemoryRegion *sysmem,
     DeviceState  *dev;
 
     dev = qdev_new(TYPE_MCF_INTC);
+
+    mcf_qsm_set_intc_device(dev);
+
     object_property_set_link(OBJECT(dev), "m68k-cpu",
                              OBJECT(cpu), &error_abort);
+
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     memory_region_add_subregion(sysmem, base,
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));

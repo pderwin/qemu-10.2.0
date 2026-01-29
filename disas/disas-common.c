@@ -97,3 +97,39 @@ const char *lookup_symbol(uint64_t orig_addr)
 
     return symbol;
 }
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        lookup_symbol_r
+ *
+ * description: lookup a symbol and format the output with an added offset
+ *              in the string.
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+uint32_t lookup_symbol_r(uint64_t orig_addr, char *buf, uint32_t buf_siz)
+{
+   uint32_t
+      rc;
+   struct syminfo
+      *s;
+
+   sprintf(buf, "???");
+
+   for (s = syminfos; s; s = s->next) {
+
+      rc = s->lookup_symbol_r(s, orig_addr, buf, buf_siz);
+
+      /*
+       * rc = 0 is success
+       */
+      if (rc == 0) {
+         return rc;
+      }
+   }
+
+   return 1;
+}

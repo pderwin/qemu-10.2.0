@@ -16,16 +16,20 @@ char *plugin_disas(CPUState *cpu, const DisasContextBase *db,
 #endif
 
 /* Look up symbol for debugging purpose.  Returns "" if unknown. */
-const char *lookup_symbol(uint64_t orig_addr);
+const char *lookup_symbol  (uint64_t orig_addr);
+uint32_t    lookup_symbol_r(uint64_t orig_addr, char *buf, uint32_t buf_siz);
 
 struct syminfo;
 struct elf32_sym;
 struct elf64_sym;
 
-typedef const char *(*lookup_symbol_t)(struct syminfo *s, uint64_t orig_addr);
+typedef const char *(*lookup_symbol_t)  (struct syminfo *s, uint64_t orig_addr);
+typedef uint32_t    (*lookup_symbol_r_t)(struct syminfo *s, uint64_t orig_addr, char *buf, uint32_t buf_siz);
 
 struct syminfo {
-    lookup_symbol_t lookup_symbol;
+    lookup_symbol_t   lookup_symbol;
+    lookup_symbol_r_t lookup_symbol_r;
+
     unsigned int disas_num_syms;
     union {
       struct elf32_sym *elf32;

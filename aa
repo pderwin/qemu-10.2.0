@@ -1,6 +1,5 @@
 rm -rf build
 mkdir -p build
 cd build
-../configure --disable-tools &&
+../configure --target-list="m68k-softmmu" --disable-tools --extra-cflags="-Werror -Wno-deprecated-declarations" &&
 make -j 10
-

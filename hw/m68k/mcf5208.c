@@ -238,9 +238,11 @@ static void mcf5208_sys_init(MemoryRegion *address_space, qemu_irq *pic,
     memory_region_init_io(iomem_rcm, NULL, &m5208_rcm_ops, cpu,
                           "m5208-rcm", 0x00000080);
     memory_region_add_subregion(address_space, 0xfc0a0000, iomem_rcm);
+
     /* SDRAMC.  */
     memory_region_init_io(iomem, NULL, &m5208_sys_ops, NULL, "m5208-sys", 0x00004000);
     memory_region_add_subregion(address_space, 0xfc0a8000, iomem);
+
     /* Timers.  */
     for (i = 0; i < 2; i++) {
         s = g_new0(m5208_timer_state, 1);
@@ -317,7 +319,11 @@ static void mcf5208evb_init(MachineState *machine)
     mcf_uart_create_mmap(0xfc068000, pic[28], serial_hd(2));
 
     mcf_sim_create_mmap(0xfffffa00, &sim_dev);
-    mcf_qsm_create_mmap(  0xfffc00, pic[1], &qsm_dev);  // user-defined vector 1, or vector number 65
+
+    mcf_qsm_create_mmap(  0xfffc00,
+                          pic[0],  // serial irq -- user-defined vector 0, or vector number 64
+                          pic[1],  // spi_irq    -- user-defined vector 1, or vector number 65
+                          &qsm_dev);
 
     mcf5208_sys_init(address_space_mem, pic, cpu);
 

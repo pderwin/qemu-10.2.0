@@ -13,7 +13,7 @@ void mcf_uart_write(void *opaque, hwaddr addr,
 DeviceState *mcf_uart_create(qemu_irq irq, Chardev *chr);
 DeviceState *mcf_uart_create_mmap(hwaddr base, qemu_irq irq, Chardev *chr);
 
-DeviceState *mcf_qsm_create_mmap(hwaddr base, qemu_irq irq, Chardev *chr);
+DeviceState *mcf_qsm_create_mmap(hwaddr base, qemu_irq ser_irq, qemu_irq spi_irq, Chardev *chr);
 DeviceState *mcf_sim_create_mmap(hwaddr base, Chardev *chr);
 
 /*

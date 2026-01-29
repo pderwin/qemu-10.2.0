@@ -877,6 +877,9 @@ int qemu_plugin_num_vcpus(void);
 QEMU_PLUGIN_API
 void qemu_plugin_outs(const char *string);
 
+QEMU_PLUGIN_API
+void qemu_plugin_printf(const char *fmt, ...) __attribute__((format(printf, 1, 0)));
+
 /**
  * qemu_plugin_bool_parse() - parses a boolean argument in the form of
  * "<argname>=[on|yes|true|off|no|false]"
@@ -1212,6 +1215,6 @@ uint64_t qemu_plugin_u64_sum(qemu_plugin_u64 entry);
 
 
 QEMU_PLUGIN_API
-const char *qemu_plugin_hwaddr_symbol(uint32_t hwaddr);
+uint32_t qemu_plugin_hwaddr_symbol(uint32_t hwaddr, char *buf, uint32_t buf_siz);
 
 #endif /* QEMU_QEMU_PLUGIN_H */

@@ -405,6 +405,19 @@ void qemu_plugin_outs(const char *string)
     qemu_log_mask(CPU_LOG_PLUGIN, "%s", string);
 }
 
+void qemu_plugin_printf(const char *fmt, ...)
+{
+   char buf[256];
+   va_list ap;
+
+   va_start(ap, fmt);
+   vsprintf(buf, fmt, ap);
+   va_end(ap);
+
+   qemu_plugin_outs(buf);
+}
+
+
 bool qemu_plugin_bool_parse(const char *name, const char *value, bool *ret)
 {
     return name && value && qapi_bool_parse(name, value, ret, NULL);

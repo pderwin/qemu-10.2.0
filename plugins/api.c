@@ -49,6 +49,16 @@
 #include "plugin.h"
 
 /* Uninstall and Reset handlers */
+uint64_t qemu_plugin_clock_get_ms(void)
+{
+   return qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
+}
+
+/* Uninstall and Reset handlers */
+uint64_t qemu_plugin_clock_get_us(void)
+{
+   return qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
+}
 
 void qemu_plugin_uninstall(qemu_plugin_id_t id, qemu_plugin_simple_cb_t cb)
 {
@@ -407,7 +417,7 @@ void qemu_plugin_outs(const char *string)
 
 void qemu_plugin_printf(const char *fmt, ...)
 {
-   char buf[256];
+   char buf[512];
    va_list ap;
 
    va_start(ap, fmt);

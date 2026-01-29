@@ -870,6 +870,12 @@ void qemu_plugin_register_atexit_cb(qemu_plugin_id_t id,
 QEMU_PLUGIN_API
 int qemu_plugin_num_vcpus(void);
 
+QEMU_PLUGIN_API
+uint64_t qemu_plugin_clock_get_ms(void);
+
+QEMU_PLUGIN_API
+uint64_t qemu_plugin_clock_get_us(void);
+
 /**
  * qemu_plugin_outs() - output string via QEMU's logging system
  * @string: a string

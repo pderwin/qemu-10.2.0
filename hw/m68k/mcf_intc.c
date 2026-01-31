@@ -43,7 +43,7 @@ static void mcf_intc_update(mcf_intc_state *s)
     int best_level;
 
     active = s->ipr;
-    best_level = 1;
+    best_level = 0;
     best = 64;
 
     if (active) {
@@ -60,11 +60,8 @@ static void mcf_intc_update(mcf_intc_state *s)
      * User vectors start at number 64
      */
     s->active_vector = ((best == 64) ? 24 : (best + 64));
-//    printf("%s %d av: %d \n", __func__, __LINE__, s->active_vector );
 
     m68k_set_irq_level(s->cpu, best_level, s->active_vector);
-
-//    printf("%s %d IIIIIIIIIIIIII done \n", __func__, __LINE__);
 }
 
 void mcf_intc_set_level(void *opaque, uint32_t irq, uint32_t level)
@@ -77,8 +74,6 @@ void mcf_intc_set_level(void *opaque, uint32_t irq, uint32_t level)
 static void mcf_intc_set_irq(void *opaque, int irq, int level)
 {
     mcf_intc_state *s = (mcf_intc_state *)opaque;
-
-//    printf("%s %d SSSSSSSSSSSSS opaque: %p i: %d l: %d\n", __func__, __LINE__, opaque, irq, level);
 
     if (irq >= 64)
         return;

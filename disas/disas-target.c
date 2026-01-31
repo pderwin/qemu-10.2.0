@@ -62,7 +62,10 @@ void target_disas(FILE *out, CPUState *cpu, const struct DisasContextBase *db)
 #ifdef CONFIG_PLUGIN
 static void plugin_print_address(bfd_vma addr, struct disassemble_info *info)
 {
-    /* does nothing */
+   uint32_t
+      addr32 = (uint32_t) addr;
+
+   (*info->fprintf_func) (info->stream, "0x%x", addr32 );
 }
 
 /*

@@ -4,9 +4,10 @@
 /* A small part of this API is split into its own header */
 #include "qemu/log-for-trace.h"
 
-/* 
+/*
  * The new API:
  */
+void qemu_log_start_line (const char *str);
 
 /* Returns true if qemu_log() will really write somewhere. */
 bool qemu_log_enabled(void);

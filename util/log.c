@@ -27,6 +27,7 @@
 #include "qemu/thread.h"
 #include "qemu/lockable.h"
 #include "qemu/rcu.h"
+#include "qemu/timer.h"
 #ifdef CONFIG_LINUX
 #include <sys/syscall.h>
 #endif
@@ -141,6 +142,24 @@ void qemu_log_unlock(FILE *logfile)
             rcu_read_unlock();
         }
     }
+}
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        qemu_log_start_line
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+void qemu_log_start_line (const char *str)
+{
+   uint64_t ts_usec = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
+
+   qemu_log("%3s | %5ld.%03d | ", str, (ts_usec / 1000), (int) (ts_usec % 1000) );
 }
 
 void qemu_log(const char *fmt, ...)

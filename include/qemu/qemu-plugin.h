@@ -876,6 +876,9 @@ uint64_t qemu_plugin_clock_get_ms(void);
 QEMU_PLUGIN_API
 uint64_t qemu_plugin_clock_get_us(void);
 
+QEMU_PLUGIN_API
+void qemu_plugin_log_start_line(const char *str);
+
 /**
  * qemu_plugin_outs() - output string via QEMU's logging system
  * @string: a string

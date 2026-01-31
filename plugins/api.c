@@ -60,6 +60,12 @@ uint64_t qemu_plugin_clock_get_us(void)
    return qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
 }
 
+/* Uninstall and Reset handlers */
+void qemu_plugin_log_start_line(const char *str)
+{
+   qemu_log_start_line(str);
+}
+
 void qemu_plugin_uninstall(qemu_plugin_id_t id, qemu_plugin_simple_cb_t cb)
 {
     plugin_reset_uninstall(id, cb, false);

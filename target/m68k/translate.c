@@ -6181,12 +6181,11 @@ void m68k_cpu_dump_state(CPUState *cs, FILE *f, int flags)
         qemu_fprintf(f, "RP ");
         break;
     }
+
     qemu_fprintf(f, "\n");
+
 #ifndef CONFIG_USER_ONLY
-    qemu_fprintf(f, "%sA7(MSP) = %08x %sA7(USP) = %08x %sA7(ISP) = %08x\n",
-                 env->current_sp == M68K_SSP ? "->" : "  ", env->sp[M68K_SSP],
-                 env->current_sp == M68K_USP ? "->" : "  ", env->sp[M68K_USP],
-                 env->current_sp == M68K_ISP ? "->" : "  ", env->sp[M68K_ISP]);
+    qemu_fprintf(f, "A7(ISP) = %08x\n", env->sp[M68K_ISP]);
     qemu_fprintf(f, "VBR = 0x%08x\n", env->vbr);
     qemu_fprintf(f, "SFC = %x DFC %x\n", env->sfc, env->dfc);
     qemu_fprintf(f, "SSW %08x TCR %08x URP %08x SRP %08x\n",

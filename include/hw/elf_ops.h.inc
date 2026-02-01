@@ -130,6 +130,28 @@ static uint32_t glue(lookup_symbol_r, SZ)(struct syminfo *s,
     return 0;
 }
 
+static uint32_t glue(symbol_address, SZ)(struct syminfo *s,
+					 const char *name,
+					 hwaddr *addr_ptr)
+{
+   uint32_t
+      i,
+      num_syms;
+
+   struct elf_sym *sym = glue(s->disas_symtab.elf, SZ);
+
+   num_syms = s->disas_num_syms;
+
+   for (i=0; i< num_syms; i++,sym++) {
+      if (!strcmp(s->disas_strtab + sym->st_name, name)) {
+	 *addr_ptr = sym->st_value;
+	 return 0;
+      }
+   }
+
+    return 1;
+}
+
 static int glue(symcmp, SZ)(const void *s0, const void *s1)
 {
     struct elf_sym *sym0 = (struct elf_sym *)s0;
@@ -194,10 +216,12 @@ static void glue(load_symbols, SZ)(struct elfhdr *ehdr, int fd, int must_swab,
 	}
 	/* We are only interested in function symbols.
 	   Throw everything else away.  */
+
 	/*
-	 * Erwin: Removed test for the symbol to be required as a function.  (STT_FUNC)
+	 * Erwin: Removed test for the symbol to be required as a function.  Instead, check that
+	 *        the symbol is 'global', not local
 	 */
-	if (syms[i].st_shndx == SHN_UNDEF || syms[i].st_shndx >= SHN_LORESERVE ) {
+	if (syms[i].st_shndx == SHN_UNDEF || syms[i].st_shndx >= SHN_LORESERVE || ( ELF_ST_BIND(syms[i].st_info) == 0) ) {
 	    nsyms--;
 	    if (i < nsyms) {
 		syms[i] = syms[nsyms];
@@ -226,8 +250,10 @@ static void glue(load_symbols, SZ)(struct elfhdr *ehdr, int fd, int must_swab,
 
     /* Commit */
     s = g_malloc0(sizeof(*s));
-    s->lookup_symbol = glue(lookup_symbol, SZ);
+    s->lookup_symbol   = glue(lookup_symbol, SZ);
     s->lookup_symbol_r = glue(lookup_symbol_r, SZ);
+    s->symbol_address  = glue(symbol_address, SZ);
+
     glue(s->disas_symtab.elf, SZ) = g_steal_pointer(&syms);
     s->disas_num_syms = nsyms;
     s->disas_strtab = g_steal_pointer(&str);

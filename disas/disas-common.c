@@ -133,3 +133,40 @@ uint32_t lookup_symbol_r(uint64_t orig_addr, char *buf, uint32_t buf_siz)
 
    return 1;
 }
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        symbol_address
+ *
+ * description: Given the symbol name, returns its address.
+ *
+ * input:
+ *
+ * output:      0 - success
+ *              1 - error
+ *
+ *-------------------------------------------------------------------------*/
+uint32_t symbol_address(const char *str, uint32_t *addr_ptr)
+{
+   uint32_t
+      rc;
+   hwaddr
+      hwaddr;
+   struct syminfo
+      *s;
+
+   for (s = syminfos; s; s = s->next) {
+
+      rc = s->symbol_address(s, str, &hwaddr);
+
+      /*
+       * rc = 0 is success
+       */
+      if (rc == 0) {
+         *addr_ptr = hwaddr;
+         return 0;
+      }
+   }
+
+   return 1;
+}

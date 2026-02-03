@@ -347,6 +347,34 @@ uint32_t qemu_plugin_hwaddr_symbol(uint32_t hwaddr, char *buf, uint32_t buf_siz)
     return rc;
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        qemu_plugin_symbol_address
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:      None
+ *
+ *-------------------------------------------------------------------------*/
+uint32_t qemu_plugin_symbol_address(const char *name, uint32_t *addr_ptr)
+{
+   uint32_t
+      addr,
+      rc;
+
+   rc = symbol_address(name, &addr);
+
+   if (rc) {
+      qemu_log("%s: Error reading address for symbol named: '%s' \n", __func__, name);
+      exit(1);
+   }
+
+   *addr_ptr = addr;
+   return 0;
+}
+
 /*
  * The memory queries allow the plugin to query information about a
  * memory access.

@@ -36,13 +36,15 @@ serial_recv_event_t serial_recv_events[] = {
 struct mcf_qsm_state {
    SysBusDevice  parent_obj;
    MemoryRegion  iomem;
+   DeviceState  *intc_dev;
    CharFrontend  chr;
    QEMUTimer    *ser_recv_timer;
    QEMUTimer    *ser_xmit_timer;
    QEMUTimer    *spi_timer;
+   uint32_t      baud_rate;
+
    qemu_irq      ser_irq;
    qemu_irq      spi_irq;
-   uint32_t      baud_rate;
 
    serial_recv_event_t *serial_recv_event;
    const char   *serial_recv_event_cp;
@@ -75,27 +77,17 @@ struct mcf_qsm_state {
 
 #define TYPE_MCF_QSM "mcf-qsm"
 
+/*
+ * The 'qivr' register value will set the base vector value for both the
+ * serial and SPI interrupts.  SER is the first one.
+ */
+#define IRQ_SER (0)
+#define IRQ_SPI (1)
+
+
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_qsm_state, MCF_QSM);
 
-static DeviceState *my_intc_device;
-
 static void serial_log_entry( const char *read_write_str, uint8_t ch);
-
-/*-------------------------------------------------------------------------
- *
- * name:        mcf_qsm_set_intc_device
- *
- * description:
- *
- * input:
- *
- * output:
- *
- *-------------------------------------------------------------------------*/
-void mcf_qsm_set_intc_device(DeviceState *dev)
-{
-   my_intc_device = dev;
-}
 
 /*-------------------------------------------------------------------------
  *
@@ -427,16 +419,37 @@ static void mcf_qsm_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
         */
     case 0x04:
        s->qilr = val;
-
-#define IRQ_SER (0)
-#define IRQ_SPI (1)
-
-       mcf_intc_set_level(my_intc_device, IRQ_SER, (val >> 0) & 0x7);
-       mcf_intc_set_level(my_intc_device, IRQ_SPI, (val >> 3) & 0x7);
        break;
 
     case 0x05:
        s->qivr = val;
+
+       /*
+        * Now that we know the interrupt to use, we can set its priority in the controller
+        */
+       {
+          mcf_intc_set_priority(s->intc_dev, (s->qivr + IRQ_SER), (s->qilr >> 0) & 0x7);
+          mcf_intc_set_priority(s->intc_dev, (s->qivr + IRQ_SPI), (s->qilr >> 3) & 0x7);
+       }
+
+       /*
+        * now that we know that we know what interrupt vector to use,
+        * connect to it.
+        *
+        * NOTE:
+        *
+        * The order in which the sysbus_init_irq() calls are done determines which interrupt number we get in
+        * the sysbus device 'dev'.  Since spi is first, it is entry 0, when we sysbus_connect_irq() during
+        * mcf_qsm_create()
+        */
+       s->ser_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SER);
+       sysbus_init_irq(SYS_BUS_DEVICE(s), &s->spi_irq);
+       sysbus_connect_irq(SYS_BUS_DEVICE(s), 0, s->spi_irq);
+
+       s->spi_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SPI);
+       sysbus_init_irq(SYS_BUS_DEVICE(s), &s->ser_irq);
+       sysbus_connect_irq(SYS_BUS_DEVICE(s), 1, s->ser_irq);
+
        break;
 
        /*
@@ -519,10 +532,6 @@ static void mcf_qsm_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
 
        if (val & SPCR1_SPE) {
           timer_mod(s->spi_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SPI_TIMER_INTERVAL_NS);
-
-          /*
-           * Need to make sure status is not showing complete.
-           */
        }
 
        break;
@@ -605,8 +614,6 @@ static void mcf_qsm_instance_init(Object *obj)
      * the sysbus device 'dev'.  Since spi is first, it is entry 0, when we sysbus_connect_irq() during
      * mcf_qsm_create()
      */
-    sysbus_init_irq(dev, &s->spi_irq);
-    sysbus_init_irq(dev, &s->ser_irq);
 
     /*
      * Initialze registers
@@ -676,20 +683,16 @@ type_init(mcf_qsm_register);
  * output:
  *
  *-------------------------------------------------------------------------*/
-static DeviceState *mcf_qsm_create(qemu_irq ser_irq, qemu_irq spi_irq)
+static DeviceState *mcf_qsm_create(DeviceState *intc_dev)
 {
     DeviceState *dev;
 
     dev = qdev_new(TYPE_MCF_QSM);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-    /*
-     * Connect to irq's
-     *
-     * irq number is determined by the calls to sysbus_init_irq() above.  See notes there.
-     */
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, spi_irq);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 1, ser_irq);
+    mcf_qsm_state *s = MCF_QSM(dev);
+
+    s->intc_dev = intc_dev;
 
     return dev;
 }
@@ -706,11 +709,11 @@ static DeviceState *mcf_qsm_create(qemu_irq ser_irq, qemu_irq spi_irq)
  * output:
  *
  *-------------------------------------------------------------------------*/
-DeviceState *mcf_qsm_create_mmap(hwaddr base, qemu_irq ser_irq, qemu_irq spi_irq)
+DeviceState *mcf_qsm_create_mmap(hwaddr base, DeviceState *intc_dev)
 {
     DeviceState *dev;
 
-    dev = mcf_qsm_create(ser_irq, spi_irq);
+    dev = mcf_qsm_create(intc_dev);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     return dev;

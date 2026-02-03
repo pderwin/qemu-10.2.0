@@ -16,8 +16,7 @@
 #include "hw/qdev-properties-system.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
-
-#define FIFO_DEPTH 4
+#include "hw/m68k/mcf.h"
 
 struct mcf_sim_state {
    SysBusDevice parent_obj;
@@ -25,8 +24,10 @@ struct mcf_sim_state {
    QEMUTimer *slock_timer;
    CharFrontend chr;
 
+   /*
+    * Registers
+    */
    uint32_t syncr;
-
 };
 
 #define TYPE_MCF_SIM "mcf-sim"
@@ -149,28 +150,24 @@ static void mcf_sim_register(void)
     type_register_static(&mcf_sim_info);
 }
 
-type_init(mcf_sim_register)
+type_init(mcf_sim_register);
 
-   DeviceState *mcf_sim_create(Chardev *chrdrv);
-
-DeviceState *mcf_sim_create(Chardev *chrdrv)
+static DeviceState *mcf_sim_create(void)
 {
-    DeviceState *dev;
+   DeviceState *dev;
 
-    dev = qdev_new(TYPE_MCF_SIM);
+   dev = qdev_new(TYPE_MCF_SIM);
 
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+   sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-    return dev;
+   return dev;
 }
 
-DeviceState *mcf_sim_create_mmap(hwaddr base, Chardev *chrdrv)
+DeviceState *mcf_sim_create_mmap(hwaddr base)
 {
     DeviceState *dev;
 
-    chrdrv->label = (char *) "sim";
-
-    dev = mcf_sim_create(chrdrv);
+    dev = mcf_sim_create();
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     return dev;

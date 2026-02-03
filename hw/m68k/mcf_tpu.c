@@ -18,7 +18,7 @@
 struct mcf_tpu_state {
    SysBusDevice  parent_obj;
    MemoryRegion  iomem;
-   qemu_irq      tpu_irq;
+   DeviceState  *intc_dev;
 
 
 
@@ -66,24 +66,7 @@ enum {
 
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_tpu_state, MCF_TPU);
 
-static DeviceState *my_intc_device;
-static void ticr_write(uint32_t val);
-
-/*-------------------------------------------------------------------------
- *
- * name:
- *
- * description:
- *
- * input:
- *
- * output:
- *
- *-------------------------------------------------------------------------*/
-void mcf_tpu_set_intc_device(DeviceState *dev)
-{
-   my_intc_device = dev;
-}
+static void ticr_write(mcf_tpu_state *s, uint32_t val);
 
 /*-------------------------------------------------------------------------
  *
@@ -168,7 +151,7 @@ static void mcf_tpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
         */
     case TICR:
        s->ticr = val;
-       ticr_write(val);
+       ticr_write(s, val);
        break;
 
     case TPUMCR: //
@@ -227,20 +210,6 @@ static void mcf_tpu_instance_init(Object *obj)
     memory_region_init_io(&s->iomem, obj, &mcf_tpu_ops, s, "tpu", 0x40);
 
     sysbus_init_mmio(dev, &s->iomem);
-
-    /*
-     * NOTE:
-     *
-     * The order in which the sysbus_init_irq() calls are done determines which interrupt number we get in
-     * the sysbus device 'dev'.  Since spi is first, it is entry 0, when we sysbus_connect_irq() during
-     * mcf_qsm_create()
-     */
-    sysbus_init_irq(dev, &s->tpu_irq);
-
-    /*
-     * Initialze registers
-     */
-//    s->scsr = (SCSR_TDRE | SCSR_TC);
 }
 
 static void mcf_tpu_realize(DeviceState *dev, Error **errp)
@@ -248,11 +217,6 @@ static void mcf_tpu_realize(DeviceState *dev, Error **errp)
     mcf_tpu_state *s = MCF_TPU(dev);
 
     (void) s;
-
-//    s->spi_timer      = timer_new_ns(QEMU_CLOCK_VIRTUAL, spi_timer_cb,      s);
-
-//    ser_recv_start_timer_string(s);
-
 }
 
 static const Property mcf_tpu_properties[] = {
@@ -286,7 +250,7 @@ type_init(mcf_tpu_register);
 
 /*-------------------------------------------------------------------------
  *
- * name:        mcf_qsm_create
+ * name:        mcf_tpu_create
  *
  * description:
  *
@@ -295,19 +259,16 @@ type_init(mcf_tpu_register);
  * output:
  *
  *-------------------------------------------------------------------------*/
-static DeviceState *mcf_tpu_create(qemu_irq tpu_irq)
+static DeviceState *mcf_tpu_create(DeviceState *intc_dev)
 {
     DeviceState *dev;
 
     dev = qdev_new(TYPE_MCF_TPU);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-    /*
-     * Connect to irq's
-     *
-     * irq number is determined by the calls to sysbus_init_irq() above.  See notes there.
-     */
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, tpu_irq);
+    mcf_tpu_state *s = MCF_TPU(dev);
+
+    s->intc_dev = intc_dev;
 
     return dev;
 }
@@ -324,11 +285,11 @@ static DeviceState *mcf_tpu_create(qemu_irq tpu_irq)
  * output:
  *
  *-------------------------------------------------------------------------*/
-DeviceState *mcf_tpu_create_mmap(hwaddr base, qemu_irq tpu_irq)
+DeviceState *mcf_tpu_create_mmap(hwaddr base, DeviceState *intc_dev)
 {
     DeviceState *dev;
 
-    dev = mcf_tpu_create(tpu_irq);
+    dev = mcf_tpu_create(intc_dev);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     return dev;
@@ -345,11 +306,12 @@ DeviceState *mcf_tpu_create_mmap(hwaddr base, qemu_irq tpu_irq)
  * output:
  *
  *-------------------------------------------------------------------------*/
-static void ticr_write(uint32_t val)
+static void ticr_write(mcf_tpu_state *s, uint32_t val)
 {
    uint32_t
       cibv,
-      cirl;
+      cirl,
+      vector_number;
 
    /*
     * The TPU uses 16 interrupts.  The cibv field is the top nibble of the first
@@ -360,5 +322,15 @@ static void ticr_write(uint32_t val)
    cibv = (val >> 4) & 0xf;
    cirl = (val >> 8) & 7;
 
+   /*
+    * Convert register bits into the actual vector number to use.
+    */
+   vector_number = (cibv << 4);
+
    qemu_log("TICR: cirl: %x cibv: %x\n", cirl, cibv);
+
+   /*
+    * Set the interrupt priority
+    */
+   mcf_intc_set_priority(s->intc_dev, vector_number, (val >> 0) & 0x7);
 }

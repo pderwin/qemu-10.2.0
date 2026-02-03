@@ -23,84 +23,176 @@
 #define TYPE_MCF_INTC "mcf-intc"
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_intc_state, MCF_INTC)
 
-struct mcf_intc_state {
-    SysBusDevice parent_obj;
+#define USER_VECTORS_SUPPORTED (192)
+#define USER_VECTOR_FIRST      (64)
+#define USER_VECTOR_WORDS      (USER_VECTORS_SUPPORTED / 64)
 
-    MemoryRegion iomem;
-    uint64_t ipr;
-    uint64_t ifr;
-    uint64_t enabled;
-    uint8_t icr[64];
-    M68kCPU *cpu;
-    int active_vector;
+struct mcf_intc_state {
+   SysBusDevice  parent_obj;
+   MemoryRegion  iomem;
+   qemu_irq     *qemu_irqs;
+   uint64_t      pending[USER_VECTOR_WORDS];
+   uint8_t       priority[USER_VECTORS_SUPPORTED];
+   M68kCPU      *cpu;
+   int           active_vector;
 };
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_intc_update
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 static void mcf_intc_update(mcf_intc_state *s)
 {
-    uint64_t active;
+   uint32_t
+      uvn,
+      w;
+    uint64_t
+       pending;
     int i;
     int best;
     int best_level;
 
-    active = s->ipr;
     best_level = 0;
-    best = 64;
+    best = -1;
 
-    if (active) {
-        for (i = 0; i < 64; i++) {
-            if ((active & 1) != 0 && s->icr[i] >= best_level) {
-                best_level = s->icr[i];
-                best = i;
-            }
-            active >>= 1;
-        }
+    /*
+     * Process all words of the pending register
+     */
+    for (w=0; w < USER_VECTOR_WORDS; w++) {
+
+       pending = s->pending[w];
+
+       if (pending) {
+
+          /*
+           * Scan all 64 bits of the register
+           */
+          for (i = 0; i < 64; i++) {
+             /*
+              * If pending bit is set, and the priority is higher than what has been seen so far...
+              */
+             if ( (pending & (1 << i)) && s->priority[i] >= best_level) {
+
+                uvn = (w * 64) + i;  // user vector number
+
+                best_level = s->priority[uvn];
+                best = uvn;
+             }
+          }
+       }
     }
 
     /*
      * User vectors start at number 64
      */
-    s->active_vector = ((best == 64) ? 24 : (best + 64));
+    s->active_vector = ((best == -1) ? 24 : (best + 64));
 
     m68k_set_irq_level(s->cpu, best_level, s->active_vector);
 }
 
-void mcf_intc_connect(void *opaque, uint32_t irq, uint32_t level)
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_intc_get_qemu_irq
+ *
+ * description: Return the qemu_irq ptr from this device's array
+ *
+ * input:       vector_number: The CPUs vector number entry.  This code
+ *                             only works with the user vectors, so we
+ *                             subtract 64 from the input.
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+qemu_irq mcf_intc_get_qemu_irq(void *opaque, uint32_t vector_number)
 {
-   mcf_intc_state *s = (mcf_intc_state *)opaque;
+   mcf_intc_state
+      *s = MCF_INTC(opaque);
 
-   s->icr[irq] = level;
+   return s->qemu_irqs[vector_number - 64];
 }
 
-void mcf_intc_set_level(void *opaque, uint32_t irq, uint32_t level)
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_intc_set_priority
+ *
+ * description: Set the priority level for a given interrupt vector.  This
+ *              code only manages the user interrupts, so we subtract 64
+ *              from the vector number.
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+void mcf_intc_set_priority(void *opaque, uint32_t vector_number, uint32_t priority)
 {
-   mcf_intc_state *s = (mcf_intc_state *)opaque;
+   uint32_t
+      irq;
+   mcf_intc_state
+      *s = (mcf_intc_state *)opaque;
 
-   s->icr[irq] = level;
+   irq = (vector_number - 64);
+
+   s->priority[irq] = priority;
 }
 
-static void mcf_intc_set_irq(void *opaque, int irq, int level)
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_intc_set_irq
+ *
+ * description: This is a callback routine, invoked with driver code calls
+ *              qemu_set_irq()
+ *
+ * input:       irq: user interrupt vector number
+ *                   i.e. an input value of 0 results in vector number 64 being
+ *                   asserted.
+ *
+ * output:
+ *
+ * NOTE:        The function is provided as a callback to the qemu_allocate_irqs()
+ *              call below and therefore the parms are fixed.  Cannot include
+ *              a parm for setting the interrupt priority on this call.
+ *-------------------------------------------------------------------------*/
+static void mcf_intc_set_irq_cb(void *opaque, int irq, int state)
 {
-    mcf_intc_state *s = (mcf_intc_state *)opaque;
+   uint32_t
+      bit,
+      w;
+   mcf_intc_state
+      *s = opaque;
 
-    if (irq >= 64)
-        return;
+   if (irq >= USER_VECTORS_SUPPORTED) {
+      qemu_log("%s: invalid irq number: %d\n", __func__, irq);
+      return;
+   }
 
-    if (level)
-        s->ipr |= 1ull << irq;
-    else
-        s->ipr &= ~(1ull << irq);
+   /*
+    * Find which bit to set in the array of 64-bit variables
+    */
+   w   = irq / 64;
+   bit = irq % 64;
 
-    mcf_intc_update(s);
+   if (state)
+      s->pending[w] |= (1ull << bit);
+   else
+      s->pending[w] &= ~(1ull << bit);
+
+   mcf_intc_update(s);
 }
 
 static void mcf_intc_reset(DeviceState *dev)
 {
     mcf_intc_state *s = MCF_INTC(dev);
 
-    s->ipr = 0;
-    s->ifr = 0;
-    s->enabled = 0;
-    memset(s->icr, 0, 64);
+    bzero(s->pending, sizeof(s->pending));
+    bzero(s->priority, sizeof(s->priority));
     s->active_vector = 24;
 }
 
@@ -113,6 +205,8 @@ static const MemoryRegionOps mcf_intc_ops = {
 static void mcf_intc_instance_init(Object *obj)
 {
     mcf_intc_state *s = MCF_INTC(obj);
+
+    qemu_log("%s %d obj: %p s: %p\n", __func__, __LINE__, obj, s);
 
     memory_region_init_io(&s->iomem, obj, &mcf_intc_ops, s, "mcf", 0x100);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
@@ -145,25 +239,23 @@ static void mcf_intc_register_types(void)
     type_register_static(&mcf_intc_gate_info);
 }
 
-type_init(mcf_intc_register_types)
+type_init(mcf_intc_register_types);
 
-qemu_irq *mcf_intc_init(MemoryRegion *sysmem,
-                        hwaddr base,
-                        M68kCPU *cpu)
+DeviceState *mcf_intc_init(M68kCPU *cpu)
 {
-    DeviceState  *dev;
+   DeviceState
+      *dev;
 
-    dev = qdev_new(TYPE_MCF_INTC);
+   dev = qdev_new(TYPE_MCF_INTC);
 
-    mcf_qsm_set_intc_device(dev);
-    mcf_tpu_set_intc_device(dev);
+   mcf_intc_state *s = MCF_INTC(dev);
 
-    object_property_set_link(OBJECT(dev), "m68k-cpu",
-                             OBJECT(cpu), &error_abort);
+   object_property_set_link(OBJECT(dev), "m68k-cpu",
+                            OBJECT(cpu), &error_abort);
 
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-    memory_region_add_subregion(sysmem, base,
-                                sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
+   sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-    return qemu_allocate_irqs(mcf_intc_set_irq, dev, 64);
+   s->qemu_irqs = qemu_allocate_irqs(mcf_intc_set_irq_cb, dev, 64);
+
+   return dev;
 }

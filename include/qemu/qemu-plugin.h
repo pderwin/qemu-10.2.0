@@ -1222,8 +1222,17 @@ void qemu_plugin_u64_set(qemu_plugin_u64 entry, unsigned int vcpu_index,
 QEMU_PLUGIN_API
 uint64_t qemu_plugin_u64_sum(qemu_plugin_u64 entry);
 
-
+/*
+ * Given a hwaddr, find a symbol in the symbol table and return it as a
+ * string.  If it is not an exact match, append the '+0xnnnnn' offset value.
+ */
 QEMU_PLUGIN_API
 uint32_t qemu_plugin_hwaddr_symbol(uint32_t hwaddr, char *buf, uint32_t buf_siz);
+
+/*
+ * Try to find a symbol by name in the symbol table and return its hardware address.
+ */
+QEMU_PLUGIN_API
+uint32_t qemu_plugin_symbol_address(const char *name, uint32_t *addr_ptr);
 
 #endif /* QEMU_QEMU_PLUGIN_H */

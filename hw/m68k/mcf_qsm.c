@@ -81,6 +81,17 @@ static DeviceState *my_intc_device;
 
 static void serial_log_entry( const char *read_write_str, uint8_t ch);
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_qsm_set_intc_device
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 void mcf_qsm_set_intc_device(DeviceState *dev)
 {
    my_intc_device = dev;
@@ -665,7 +676,7 @@ type_init(mcf_qsm_register);
  * output:
  *
  *-------------------------------------------------------------------------*/
-static DeviceState *mcf_qsm_create(qemu_irq ser_irq, qemu_irq spi_irq, Chardev *chrdrv)
+static DeviceState *mcf_qsm_create(qemu_irq ser_irq, qemu_irq spi_irq)
 {
     DeviceState *dev;
 
@@ -695,11 +706,11 @@ static DeviceState *mcf_qsm_create(qemu_irq ser_irq, qemu_irq spi_irq, Chardev *
  * output:
  *
  *-------------------------------------------------------------------------*/
-DeviceState *mcf_qsm_create_mmap(hwaddr base, qemu_irq ser_irq, qemu_irq spi_irq, Chardev *chrdrv)
+DeviceState *mcf_qsm_create_mmap(hwaddr base, qemu_irq ser_irq, qemu_irq spi_irq)
 {
     DeviceState *dev;
 
-    dev = mcf_qsm_create(ser_irq, spi_irq, chrdrv);
+    dev = mcf_qsm_create(ser_irq, spi_irq);
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     return dev;

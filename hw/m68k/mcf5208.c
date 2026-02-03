@@ -276,7 +276,6 @@ static void mcf_fec_init(MemoryRegion *sysmem, hwaddr base, qemu_irq *irqs)
 }
 
 static Chardev
-   qsm_dev,
    sim_dev;
 
 static void mcf5208evb_init(MachineState *machine)
@@ -322,8 +321,13 @@ static void mcf5208evb_init(MachineState *machine)
 
     mcf_qsm_create_mmap(  0xfffc00,
                           pic[0],  // serial irq -- user-defined vector 0, or vector number 64
-                          pic[1],  // spi_irq    -- user-defined vector 1, or vector number 65
-                          &qsm_dev);
+                          pic[1]);  // spi_irq    -- user-defined vector 1, or vector number 65
+
+    /*
+     * TPU uses 16 interrupts
+     */
+    mcf_tpu_create_mmap(  0xfffe00,
+                          pic[64]);  // tpu_irq    -- user-defined vector 1, or vector number 128
 
     mcf5208_sys_init(address_space_mem, pic, cpu);
 
@@ -403,6 +407,7 @@ static void mcf5208evb_init(MachineState *machine)
     env->pc = entry;
     env->aregs[7] = 0x3fffc;
 }
+
 
 static void mcf5208evb_machine_init(MachineClass *mc)
 {

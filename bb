@@ -11,7 +11,7 @@ while [ 1 ] ; do
 	--event close_write \
 	.
 
-    make  > /tmp/compile.log
+    make -j 20  > /tmp/compile.log
     head -20 /tmp/compile.log
     date
 done

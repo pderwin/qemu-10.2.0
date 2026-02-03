@@ -64,6 +64,13 @@ static void mcf_intc_update(mcf_intc_state *s)
     m68k_set_irq_level(s->cpu, best_level, s->active_vector);
 }
 
+void mcf_intc_connect(void *opaque, uint32_t irq, uint32_t level)
+{
+   mcf_intc_state *s = (mcf_intc_state *)opaque;
+
+   s->icr[irq] = level;
+}
+
 void mcf_intc_set_level(void *opaque, uint32_t irq, uint32_t level)
 {
    mcf_intc_state *s = (mcf_intc_state *)opaque;
@@ -149,6 +156,7 @@ qemu_irq *mcf_intc_init(MemoryRegion *sysmem,
     dev = qdev_new(TYPE_MCF_INTC);
 
     mcf_qsm_set_intc_device(dev);
+    mcf_tpu_set_intc_device(dev);
 
     object_property_set_link(OBJECT(dev), "m68k-cpu",
                              OBJECT(cpu), &error_abort);

@@ -206,8 +206,6 @@ static void mcf_intc_instance_init(Object *obj)
 {
     mcf_intc_state *s = MCF_INTC(obj);
 
-    qemu_log("%s %d obj: %p s: %p\n", __func__, __LINE__, obj, s);
-
     memory_region_init_io(&s->iomem, obj, &mcf_intc_ops, s, "mcf", 0x100);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->iomem);
 }
@@ -255,7 +253,7 @@ DeviceState *mcf_intc_init(M68kCPU *cpu)
 
    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-   s->qemu_irqs = qemu_allocate_irqs(mcf_intc_set_irq_cb, dev, 64);
+   s->qemu_irqs = qemu_allocate_irqs(mcf_intc_set_irq_cb, dev, USER_VECTORS_SUPPORTED);
 
    return dev;
 }

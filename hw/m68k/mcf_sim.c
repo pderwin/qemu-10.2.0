@@ -27,8 +27,10 @@ struct mcf_sim_state {
    /*
     * Registers
     */
-   uint32_t syncr;
+   uint32_t syncr;  // a04
 };
+
+#define SYNCR (4)
 
 #define TYPE_MCF_SIM "mcf-sim"
 
@@ -42,7 +44,7 @@ uint64_t mcf_sim_read(void *opaque, hwaddr addr, unsigned size)
 
     switch (addr & 0x3f) {
 
-    case 0x04:                  // SYNCR register
+    case SYNCR:                  // SYNCR register
        return s->syncr;
     }
 
@@ -71,14 +73,13 @@ static void slock_timer_cb(void *opaque)
     s->syncr |= SYNCR_SLOCK;
 }
 
-void mcf_sim_write(void *opaque, hwaddr addr, uint64_t val, unsigned size);
-void mcf_sim_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
+static void mcf_sim_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
     mcf_sim_state *s = opaque;
 
     switch (addr & 0x3f) {
 
-    case 0x04:
+    case SYNCR:
 
        s->syncr = val;
 

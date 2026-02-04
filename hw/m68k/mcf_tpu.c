@@ -327,10 +327,8 @@ static void ticr_write(mcf_tpu_state *s, uint32_t val)
     */
    vector_number = (cibv << 4);
 
-   qemu_log("TICR: cirl: %x cibv: %x\n", cirl, cibv);
-
    /*
     * Set the interrupt priority
     */
-   mcf_intc_set_priority(s->intc_dev, vector_number, (val >> 0) & 0x7);
+   mcf_intc_set_priority(s->intc_dev, vector_number, cirl);
 }

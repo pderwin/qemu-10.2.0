@@ -90,6 +90,7 @@ static void mcf_tpu_ram_write(void *opaque, hwaddr addr, uint64_t _val, unsigned
     qemu_log("%s %d addr: %lx val: %x \n", __func__, __LINE__, addr, val);
 }
 
+
 /*-------------------------------------------------------------------------
  *
  * name:        mcf_tpu_ram_reset

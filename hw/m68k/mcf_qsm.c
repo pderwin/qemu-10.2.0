@@ -23,13 +23,21 @@ serial_recv_event_t serial_recv_events[] = {
 /*
  * POR is taking about 368 mSec.  Check time stamp of when we get to 'command_loop_wait_for_serial'.
  */
-   { 250, "IM\n" },     // cause machine to reboot
-   { 300, "vb0\n" },    // turn on verbose
-   { 300, "CT\n" },     // ask for copyright information
-   { 300, "vj1000\n" }, // set joig speed to 1000
-   { 300, "vm200\n" },  // set max motor speed to 200
-   { 300, "rl\n" },     // read limit switches
-   {   0, "" }          // end of table
+   { 300, "IM\n" },          // cause machine to reboot
+   { 300, "vb1\n" },         // turn on verbose
+   { 300, "CT\n" },          // ask for copyright information
+   { 300, "vj1000\n" },      // set joig speed to 1000
+   { 300, "vm200\n" },       // set max motor speed to 200
+   { 300, "rl\n" },          // read limit switches
+   { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
+//   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
+//   { 300, "di0,-200,0\n" }, // Move left 2500 ticks
+//   { 400, "di0,200,0\n" }, // failed to schedule a move
+//   { 300, "di0,0,-100\n" }, // Move left 2500 ticks
+//   { 300, "di0,0,100\n" }, // Move left 2500 ticks
+
+   { 200, "go\n"},           // Perform the move
+   {   0, "" }               // end of table
 };
 
 
@@ -88,6 +96,7 @@ struct mcf_qsm_state {
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_qsm_state, MCF_QSM);
 
 static void serial_log_entry( const char *read_write_str, uint8_t ch);
+static void ser_update_irq  (mcf_qsm_state *s);
 
 /*-------------------------------------------------------------------------
  *
@@ -121,7 +130,7 @@ static void ser_recv_start_timer_character (mcf_qsm_state *s)
 
 /*-------------------------------------------------------------------------
  *
- * name:        ser_recv_start_timer
+ * name:        ser_recv_start_timer_string
  *
  * description:
  *
@@ -222,6 +231,43 @@ static void ser_recv_timer_cb (void *opaque)
    }
 
 }
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        ser_update_irq
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void ser_update_irq(mcf_qsm_state *s)
+{
+   uint32_t
+      recv_irq = 0,
+      xmit_irq = 0;
+
+   /*
+    * Should we be posting an IRQ due to xmit?
+    */
+   if ( (s->scsr & SCSR_TDRE) && (s->sccr1 & SCCR1_TIE)) {
+      xmit_irq = 1;
+   }
+
+   /*
+    * should we be posting due to an recv character
+    */
+   if ( (s->scsr & SCSR_RDRF) && (s->sccr1 & SCCR1_RIE)) {
+      recv_irq = 1;
+   }
+
+   qemu_log("%s %d r: %d x: %d \n", __func__, __LINE__, recv_irq, xmit_irq);
+
+   qemu_set_irq(s->ser_irq, recv_irq || xmit_irq);
+}
+
 
 /*-------------------------------------------------------------------------
  *
@@ -497,7 +543,7 @@ static void mcf_qsm_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
        /*
         * Remove the irq request
         */
-       qemu_set_irq(s->ser_irq, 0);
+       ser_update_irq(s);
 
        /*
         * Setup a timer for when the character transmit time will end.  We need to
@@ -621,6 +667,17 @@ static void mcf_qsm_instance_init(Object *obj)
     s->scsr = (SCSR_TDRE | SCSR_TC);
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_qsm_realize
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 static void mcf_qsm_realize(DeviceState *dev, Error **errp)
 {
     mcf_qsm_state *s = MCF_QSM(dev);
@@ -640,7 +697,6 @@ static void mcf_qsm_realize(DeviceState *dev, Error **errp)
      * start the timer for the next string.
      */
     ser_recv_start_timer_string(s);
-
 }
 
 static const Property mcf_qsm_properties[] = {

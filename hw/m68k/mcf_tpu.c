@@ -1,5 +1,5 @@
 /*
- * M68332 QSM block emulation
+ * M68332 TPU block emulation
  *
  */
 #include "qemu/osdep.h"
@@ -14,62 +14,41 @@
 #include "hw/qdev-properties-system.h"
 #include "chardev/char-fe.h"
 #include "qom/object.h"
-
-struct mcf_tpu_state {
-   SysBusDevice  parent_obj;
-   MemoryRegion  iomem;
-   DeviceState  *intc_dev;
-
-
-
-
-   CharFrontend  chr;
-   QEMUTimer    *ser_recv_timer;
-   QEMUTimer    *ser_xmit_timer;
-   QEMUTimer    *spi_timer;
-   uint32_t      baud_rate;
-
-   //
-   // Register storage
-   //
-   uint16_t tpumcr; // e00
-   uint16_t tcr;    // e02
-   uint16_t dscr;   // e04
-   uint16_t dssr;   // e06
-   uint16_t ticr;   // e08
-   uint16_t cier;   // e0a
-   uint16_t cfsr0;  // e0c
-   uint16_t cfsr1;  // e0e
-   uint16_t cfsr2;  // e10
-   uint16_t cfsr3;  // e12
-   uint16_t hsrr0;  // e18
-   uint16_t hsrr1;  // e1a
-   uint16_t cpr0;   // e1c
-   uint16_t cpr1;   // e1e
-   uint16_t cisr;   // e20
-};
-
-enum {
-   TPUMCR = 0,
-   TICR   = 8,
-   CIER   = 0xa,
-   CFSR0  = 0xc,
-   CFSR1  = 0xe,
-   CFSR2  = 0x10,
-   CFSR3  = 0x12,
-   HSRR0  = 0x18,
-   HSRR1  = 0x1a,
-   CPR0   = 0x1c,
-   CPR1   = 0x1e,
-   CISR   = 0x20,
-};
+#include "mcf_tpu.h"
+#include <byteswap.h>
+/*
+ * Allocate space for the TPUs
+ */
+static tpu_t tpus[NUMBER_TPUS];
 
 #define TYPE_MCF_TPU "mcf-tpu"
 
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_tpu_state, MCF_TPU);
 
-static void ticr_write(mcf_tpu_state *s, uint32_t val);
+static uint16_t memory_read_16   (uint32_t addr);
+static void     neg_x_timer_cb   (void *opaque);
+static void     tpu_dump_timer_cb(void *opaque);
+static void     tpu_maybe_start  (tpu_t *tp);
+static void     ticr_write       (mcf_tpu_state *s, uint32_t val);
 
+static const char *function_strs[] = {
+   "str_0",  //
+   "str_1",  //
+   "str_2",  //
+   "str_3",  //
+   "str_4",  //
+   "str_5",  //
+   "QDEC",   //  6 - quadrature decoder
+   "SPWM",   //  7 - synchronized PWM
+   "DIO",    //  8 - discrete I/O
+   "PWM",    //  9 - PWM
+   "ITC",    // 10 -
+   "PMA",    // 11 -
+   "PSP",    // 12 -
+   "SM",     // 13 -
+   "OC",     // 14 - output compare
+   "str_15", //
+};
 /*-------------------------------------------------------------------------
  *
  * name:        mcf_tpu_read
@@ -97,6 +76,8 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
     case CISR:   return s->cisr;
     case CPR0:   return s->cpr0;
     case CPR1:   return s->cpr1;
+    case HSQR0:  return s->hsqr0;
+    case HSQR1:  return s->hsqr1;
     case HSRR0:  return s->hsrr0;
     case HSRR1:  return s->hsrr1;
     case TICR:   return s->ticr;
@@ -105,7 +86,7 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
     default:
        qemu_log_start_line("ERR");
        qemu_log("%s %d Read from unhandled offset: %lx size: %d \n", __func__, __LINE__, addr, size);
-       break;
+       exit(1);
     }
 
     return 0;
@@ -113,7 +94,55 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
 
 /*-------------------------------------------------------------------------
  *
- * name:        cipr_update
+ * name:        cfsr_update
+ *
+ * description: Update the channel function register
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void cfsr_update (mcf_tpu_state *s, uint16_t *cfsr_p, uint32_t first_channel, uint32_t val)
+{
+
+   uint32_t
+      channel,
+      function,
+      i;
+   tpu_t
+      *tp;
+
+   /*
+    * Update register itself
+    */
+   *cfsr_p = val;
+
+   /*
+    * Check which fields are different
+    */
+   for (i=0; i < 4; i++) {
+
+      channel = first_channel + i;
+
+      tp = &tpus[channel];
+
+      function = val & 0xf;
+
+      tp->function = function;
+
+      /*
+       * Ready for next iteration
+       */
+      val >>= 4;
+      }
+}
+
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        cpr_update
  *
  * description:
  *
@@ -122,16 +151,24 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
  * output:
  *
  *-------------------------------------------------------------------------*/
-static void cipr_update (mcf_tpu_state *s, uint16_t *cipr_p, uint32_t channel, uint32_t val)
+static void cpr_update (mcf_tpu_state *s, uint16_t *cipr_p, uint32_t first_channel, uint32_t val)
 {
    uint32_t
+      channel,
       i;
    uint16_t
       old,
       old_pri,
-      new_pri;
+      priority;
+   tpu_t
+      *tp;
 
    old = *cipr_p;
+
+   /*
+    * store new value
+    */
+   *cipr_p = val;
 
    qemu_log("%s %d old: %x new: %x \n", __func__, __LINE__, old, val);
 
@@ -139,20 +176,179 @@ static void cipr_update (mcf_tpu_state *s, uint16_t *cipr_p, uint32_t channel, u
     * Check which fields are different
     */
    for (i=0; i< 8; i++) {
-      old_pri = (old & 3);
-      new_pri = (val & 3);
 
-      if (old_pri != new_pri) {
-         qemu_log("%s %d old  channel: %d new pri: %d \n", __func__, __LINE__, i + channel, val);
+      old_pri  = (old & 3);
+      priority = (val & 3);
+
+      if (old_pri != priority) {
+
+         channel = first_channel + i;
+
+         tp = &tpus[channel];
+
+         tp->priority = priority;
+
+         qemu_log_start_line("TPU");
+
+         if (priority) {
+            tpu_maybe_start(tp);
+         }
+         else {
+            qemu_log("  | STOPPED | channel: %d \n", channel);
+            tp->is_running = 0;
+         }
+
       }
 
       old >>= 2;
       val >>= 2;
    }
 
-   *cipr_p = val;
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        hsrr_update
+ *
+ * description: Update the Host Service Request code
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void hsrr_update (mcf_tpu_state *s, uint16_t *hsrr_p, uint32_t first_channel, uint32_t val)
+{
+   uint32_t
+      channel,
+      host_service_request,
+      i;
+   tpu_t
+      *tp;
+
+   /*
+    * Update register itself
+    */
+   *hsrr_p = val;
+
+   /*
+    * Check which fields are different
+    */
+   for (i=0; i < 8; i++) {
+
+      channel = first_channel + i;
+
+      tp = &tpus[channel];
+
+      host_service_request = val & 0x3;
+
+      tp->host_service_request = host_service_request;
+
+      /*
+       * If request is non-zero, then the TPU may to run.
+       */
+      if (host_service_request) {
+         tpu_maybe_start(tp);
+      }
+
+      /*
+       * Ready for next iteration
+       */
+      val >>= 2;
+      }
+}
+
+
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        cier_update
+ *
+ * description: Update the Host Service Request code
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void cier_update (mcf_tpu_state *s, uint16_t *hsrr_p, uint32_t val)
+{
+   uint32_t
+      channel,
+      i,
+      ier;
+   tpu_t
+      *tp;
+
+   /*
+    * Update register itself
+    */
+   *hsrr_p = val;
+
+   /*
+    * Check which fields are different
+    */
+   for (i=0; i < 16; i++) {
+
+      channel = i;
+
+      tp = &tpus[channel];
+
+      ier = val & 0x1;
+
+      tp->ier = ier;
+
+      /*
+       * Ready for next iteration
+       */
+      val >>= 1;
+      }
+}
+
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        hsqr_update
+ *
+ * description: Update the Host Service Request code
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void hsqr_update (mcf_tpu_state *s, uint16_t *hsrr_p, uint32_t first_channel, uint32_t val)
+{
+   uint32_t
+      channel,
+      i;
+   tpu_t
+      *tp;
+
+   /*
+    * Update register itself
+    */
+   *hsrr_p = val;
+
+   /*
+    * Check which fields are different
+    */
+   for (i=0; i < 8; i++) {
+
+      channel = first_channel + i;
+
+      tp = &tpus[channel];
+
+      tp->host_sequence_code = (val & 0x3);
+
+      /*
+       * Ready for next iteration
+       */
+      val >>= 2;
+      }
+}
 
 /*-------------------------------------------------------------------------
  *
@@ -172,23 +368,24 @@ static void mcf_tpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
 
     switch (addr & 0x3f) {
 
-    case CFSR0: s->cfsr0 = val;
+    case CFSR0:
+       cfsr_update(s, &s->cfsr0, 12, val);
        break;
 
     case CFSR1:
-       s->cfsr1 = val;
+       cfsr_update(s, &s->cfsr1, 8, val);
        break;
 
     case CFSR2:
-       s->cfsr2 = val;
+       cfsr_update(s, &s->cfsr2, 4, val);
        break;
 
     case CFSR3:
-       s->cfsr3 = val;
+       cfsr_update(s, &s->cfsr3, 0, val);
        break;
 
     case CIER:
-       s->cier = val;
+       cier_update(s, &s->cier,val);
        break;
 
     case CISR:
@@ -196,27 +393,25 @@ static void mcf_tpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
        break;
 
     case CPR0:
-       cipr_update(s, &s->cpr0, 8, val);
+       cpr_update(s, &s->cpr0, 8, val);
        break;
 
     case CPR1:
-       cipr_update(s, &s->cpr1, 0, val);
+       cpr_update(s, &s->cpr1, 0, val);
        break;
-    case HSRR0: s->hsrr0 = val; break;
 
-       /*
-        * Write to the service request register.  We collect parms and then
-        * write the register back to 0.
-        */
+    case HSQR0:
+       hsqr_update(s, &s->hsqr0, 8, val);
+       break;
+    case HSQR1:
+       hsqr_update(s, &s->hsqr1, 0, val);
+       break;
+
+    case HSRR0:
+       hsrr_update(s, &s->hsrr0, 8, val);
+       break;
     case HSRR1:
-       s->hsrr1 = val;
-       qemu_log("%s %d Clearing HSRR1\n", __func__, __LINE__);
-
-       /*
-        * Make 0 to show we serviced the request
-        */
-       s->hsrr1 = 0;
-
+       hsrr_update(s, &s->hsrr1, 0, val);
        break;
 
        /*
@@ -258,6 +453,149 @@ static void mcf_tpu_reset(DeviceState *dev)
 //    s->spcr1 = 0x0404;
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        tpu_maybe_start
+ *
+ * description: A write to the CPRx register is requesting that this TPU
+ *              run.
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void tpu_maybe_start(tpu_t *tp)
+{
+   if (tp->is_running) {
+      qemu_log("%s %d TPU attempting to start running channel: %d \n", __func__, __LINE__, tp->channel);
+      return;
+   }
+
+#define TPU_TIMER_INTERVAL_MS(x) (x * 1000 * 1000)
+
+//   qemu_log("%s %d TPU channel: %d f: %d req: %d pri: %d \n", __func__, __LINE__, tp->channel, tp->function, tp->host_service_request, tp->priority);
+
+   /*
+    * If not a valid function, then we're stopped
+    */
+   if (tp->function == FUNCTION_IDLE) {
+      qemu_log("%s %d TPU - leaving idle - zero function - channel: %d \n", __func__, __LINE__, tp->channel);
+      return;
+   }
+
+   /*
+    * We have a valid function, but of the Host Service Request Code is 0, seems to be a 'None' action
+    */
+   if (tp->host_service_request == 0) {
+//      qemu_log("%s %d TPU - leaving idle - zero host request code - channel: %d \n", __func__, __LINE__, tp->channel);
+      return;
+   }
+
+   /*
+    * We have to have a non-zero priority
+    */
+   if (tp->priority == 0) {
+//      qemu_log("%s %d TPU - leaving idle - zero priority - channel: %d \n", __func__, __LINE__, tp->channel);
+      return;
+   }
+
+#if 0
+   /*
+    * If we are asking for PWM function with 'initialization' request, then set timer.
+    */
+   if ( (tp->function == FUNCTION_PWM) && (tp->host_service_request == 2) ) {
+      timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(5) );
+   }
+
+   /*
+    * If we are asking for PWM function with 'initialization' request, then set timer.
+    */
+   if ( (tp->function == FUNCTION_OC) ) {
+      timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(1) );
+   }
+
+
+   /*
+    * For output functions, we don't need to set a timer., but do not fall through and
+    * set TPU as running.
+    */
+   if ( (tp->function == FUNCTION_DIO) && (tp->host_service_request == 1) ) {
+
+      /* set an output high */
+
+      return;
+   }
+#endif
+
+   qemu_log("  | RUNNING  | channel: %d function: %d (%s) request: %d sequence: %x priority: %d ier: %d\n",
+            tp->channel,
+            tp->function, function_strs[tp->function],
+            tp->host_service_request,
+            tp->host_sequence_code,
+            tp->priority,
+            tp->ier);
+
+   /*
+    * Need to set timer for 50 nSec to simulate initializtion and clear the HSRRx bits
+    */
+   timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 50 );
+
+   tp->is_running = 1;
+}
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        tpu_timer_cb
+ *
+ * description: A tpu timeout has occurred.  Clear its HSRR bits and
+ *              maybe set an interrupt.
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void tpu_timer_cb(void *opaque)
+{
+   uint16_t
+      mask,
+      *reg_p;
+   uint32_t
+      bit,
+      wrd;
+   mcf_tpu_state
+      *s;
+   tpu_t
+      *tp = opaque;
+
+   s = tp->s;
+
+//   qemu_log_start_line("TPU");
+//   qemu_log("TIMER EXPIRED: channel: %d \n", tp->channel);
+
+   /*
+    * Evidently, the HSSRn register field needs to get cleared.  The firmware is
+    * polling HSRR1 at line 12260 during initialization.
+    */
+   wrd =  tp->channel / 8;
+   bit = (tp->channel % 8) * 2;
+
+   /*
+    * the register layout is 'backward'.  Move backward if needed.
+    */
+   reg_p = (&s->hsrr1 - wrd);
+
+   mask = (3 << bit);
+
+   *reg_p = *reg_p & ~mask;
+
+   /*
+    * TPU is no longer running
+    */
+   tp->is_running = 0;
+}
+
 static const MemoryRegionOps mcf_tpu_ops = {
     .read       = mcf_tpu_read,
     .write      = mcf_tpu_write,
@@ -287,14 +625,39 @@ static void mcf_tpu_instance_init(Object *obj)
 
 static void mcf_tpu_realize(DeviceState *dev, Error **errp)
 {
-    mcf_tpu_state *s = MCF_TPU(dev);
+   uint32_t
+      i;
+   mcf_tpu_state
+      *s = MCF_TPU(dev);
+   tpu_t
+      *tp;
 
-    (void) s;
+   /*
+    * Debug timer to dump all registers
+    */
+   s->timer   = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_dump_timer_cb, s);
+   s->timer_count = 0;
+
+   /*
+    * Set timer for 100mSecs
+    */
+   timer_mod(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+
+   /*
+    * Timer for channel 1 interrupts
+    */
+   s->neg_x_timer   = timer_new_ns(QEMU_CLOCK_VIRTUAL, neg_x_timer_cb, s);
+   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+
+   s->neg_x_timer_count = 0;
+
+   for (i=0, tp = tpus; i< NUMBER_TPUS; i++, tp++) {
+      tp->s       = s;
+      tp->timer   = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_timer_cb, tp);
+      tp->channel = i;
+
+   }
 }
-
-static const Property mcf_tpu_properties[] = {
-    DEFINE_PROP_CHR("chardev", mcf_tpu_state, chr),
-};
 
 static void mcf_tpu_class_init(ObjectClass *oc, const void *data)
 {
@@ -302,7 +665,6 @@ static void mcf_tpu_class_init(ObjectClass *oc, const void *data)
 
     dc->realize = mcf_tpu_realize;
     device_class_set_legacy_reset(dc, mcf_tpu_reset);
-    device_class_set_props(dc, mcf_tpu_properties);
     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
 }
 
@@ -349,9 +711,9 @@ static DeviceState *mcf_tpu_create(DeviceState *intc_dev)
 
 /*-------------------------------------------------------------------------
  *
- * name:        mcf_qsm_create_mmap
+ * name:        mcf_tpu_create_mmap
  *
- * description: Create the QSM device
+ * description: Create the TPU device
  *
  * input:
  *
@@ -384,7 +746,10 @@ static void ticr_write(mcf_tpu_state *s, uint32_t val)
    uint32_t
       cibv,
       cirl,
+      i,
       vector_number;
+   tpu_t
+      *tp;
 
    /*
     * The TPU uses 16 interrupts.  The cibv field is the top nibble of the first
@@ -404,4 +769,153 @@ static void ticr_write(mcf_tpu_state *s, uint32_t val)
     * Set the interrupt priority
     */
    mcf_intc_set_priority(s->intc_dev, vector_number, cirl);
+
+   fprintf(stderr, "vector: %d \n", vector_number);
+
+   /*
+    * Can now get the ISR infrastructure setup.
+    */
+   tp = tpus;
+
+   for (i=0; i< NUMBER_TPUS; i++,tp++) {
+      sysbus_init_irq(SYS_BUS_DEVICE(s), &tp->irq);
+      tp->irq = mcf_intc_get_qemu_irq(s->intc_dev, vector_number + i);
+      fprintf(stderr, "irq: %p \n", tp->irq);
+
+      sysbus_connect_irq(SYS_BUS_DEVICE(s), i, tp->irq);
+   }
+
+}
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        neg_x_timer_cb
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void neg_x_timer_cb(void *opaque)
+{
+   mcf_tpu_state
+      *s = opaque;
+   tpu_t
+      *tp;
+
+   s->neg_x_timer_count++;
+
+   qemu_log_start_line("TPU");
+   qemu_log("neg_x_timer_count: %d \n", s->neg_x_timer_count);
+
+   /*
+    * If more than 3 seconds, then simulate TPU channel 1 interrupts.
+    */
+   if (s->neg_x_timer_count > 30) {
+
+      tp = &tpus[1];
+
+      (void) tp;
+
+//      qemu_set_irq(tp->irq, 1);
+   }
+
+   /*
+    * Set timer for 100 mSecs later.
+    */
+   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+}
+
+
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        tpu_dump_timer_cb
+ *
+ * description: Dump all TPUs
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void tpu_dump_timer_cb(void *opaque)
+{
+   uint32_t
+      i,
+      j,
+      trp;
+   mcf_tpu_state
+      *s = opaque;
+   tpu_t
+      *tp;
+   FILE
+      *fp;
+
+   if (s->timer_count++ < 40) {
+
+      /*
+       * Set timer for 100 mSecs later.
+       */
+      timer_mod(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+      return;
+   }
+
+   if ((fp = fopen("tpu_dump","w")) == NULL) {
+      printf("Error opening dump file \n");
+      exit(1);
+   }
+
+   qemu_log_start_line("TPU");
+   qemu_log("DUMP FILE WRITTEN\n");
+
+   {
+      uint64_t ts_usec = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
+
+      fprintf(fp, "\n\nDump occurs at: %5ld.%03d \n\n", (ts_usec / 1000), (int) (ts_usec % 1000) );
+   }
+
+   fprintf(fp, " # | PRI | func  | HSRQ | HSEQ |\n");
+
+   tp = tpus;
+
+   trp = 0xffff00;
+
+   for (i=0; i<16; i++,tp++) {
+      fprintf(fp, "%2d |",  i);
+      fprintf(fp, "  %d  |",  tp->priority);
+      fprintf(fp, " %5s |", function_strs[tp->function]);
+      fprintf(fp, "  %2d  |", tp->host_service_request);
+      fprintf(fp, "  %2d  | ", tp->host_sequence_code);
+      fprintf(fp, "  %x: ", trp);
+
+      /*
+       * Read the TPU RAM for this TPU.
+       */
+      for(j=0; j < 8; j++) {
+         fprintf(fp, "%04x ", memory_read_16(trp));
+         trp += 2;
+      }
+
+      fprintf(fp, "\n");
+   }
+
+   fclose(fp);
+}
+
+static uint16_t memory_read_16 (uint32_t addr)
+{
+   uint16_t
+      val;
+
+   cpu_physical_memory_read(addr, &val, sizeof(val) );
+
+   /*
+    * Get to little endian
+    */
+   return bswap_16(val);
 }

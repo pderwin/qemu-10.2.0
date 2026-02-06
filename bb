@@ -11,7 +11,16 @@ while [ 1 ] ; do
 	--event close_write \
 	.
 
+    set-title qemu build start
     make -j 20  > /tmp/compile.log
-    head -20 /tmp/compile.log
+    rc=$?
+
+    if [ $rc -ne 0 ]; then
+	head -20 /tmp/compile.log
+	set-title qemu build error
+    else
+	set-title qemu build success
+    fi
+
     date
 done

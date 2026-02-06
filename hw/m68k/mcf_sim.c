@@ -28,32 +28,19 @@ struct mcf_sim_state {
     * Registers
     */
    uint32_t syncr;  // a04
+#define SYNCR_SLOCK ( 1 << 3  )
+#define SYNCR_X     ( 1 << 14 )
+
+   uint32_t porte;  // a11 or a13
 };
 
-#define SYNCR (4)
+#define SYNCR  (0x04)
+#define PORTE0 (0x11)
+#define PORTE1 (0x13)
 
 #define TYPE_MCF_SIM "mcf-sim"
 
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_sim_state, MCF_SIM)
-
-uint64_t mcf_sim_read(void *opaque, hwaddr addr, unsigned size);
-
-uint64_t mcf_sim_read(void *opaque, hwaddr addr, unsigned size)
-{
-    mcf_sim_state *s = opaque;
-
-    switch (addr & 0x3f) {
-
-    case SYNCR:                  // SYNCR register
-       return s->syncr;
-    }
-
-    return 0;
-}
-
-#define SYNCR_SLOCK ( 1 << 3  )
-#define SYNCR_X     ( 1 << 14 )
-
 #define SLOCK_TIMER_INTERVAL_NS (100)
 /*-------------------------------------------------------------------------
  *
@@ -73,11 +60,56 @@ static void slock_timer_cb(void *opaque)
     s->syncr |= SYNCR_SLOCK;
 }
 
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_sim_read
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static uint64_t mcf_sim_read(void *opaque, hwaddr addr, unsigned size)
+{
+    mcf_sim_state *s = opaque;
+
+    switch (addr & 0x3f) {
+
+    case PORTE0:
+    case PORTE1:
+       return s->porte;
+    case SYNCR:                  // SYNCR register
+       return s->syncr;
+    }
+
+    return 0;
+}
+
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        mcf_sim_write
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 static void mcf_sim_write(void *opaque, hwaddr addr, uint64_t val, unsigned size)
 {
     mcf_sim_state *s = opaque;
 
     switch (addr & 0x3f) {
+
+    case PORTE0:
+    case PORTE1:
+       s->porte = val;
+       break;
 
     case SYNCR:
 

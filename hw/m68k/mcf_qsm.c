@@ -23,7 +23,7 @@ serial_recv_event_t serial_recv_events[] = {
 /*
  * POR is taking about 368 mSec.  Check time stamp of when we get to 'command_loop_wait_for_serial'.
  */
-   { 400, "IM\n" },     // cause machine to reboot
+   { 250, "IM\n" },     // cause machine to reboot
    { 300, "vb0\n" },    // turn on verbose
    { 300, "CT\n" },     // ask for copyright information
    { 300, "vj1000\n" }, // set joig speed to 1000
@@ -365,9 +365,10 @@ static uint64_t mcf_qsm_read(void *opaque, hwaddr addr, unsigned size)
        /*
         * Reading from the SCDR should clear any pending serial interrupt due to RDRF
         */
+       if ( (s->sccr1 & SCCR1_RIE) && (s->scsr & SCSR_RDRF)) {
+          qemu_set_irq(s->ser_irq, 0);
+       }
        s->scsr &= ~SCSR_RDRF;
-
-       qemu_set_irq(s->ser_irq, 0);
 
        return s->scdr;
 
@@ -442,14 +443,13 @@ static void mcf_qsm_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
         * the sysbus device 'dev'.  Since spi is first, it is entry 0, when we sysbus_connect_irq() during
         * mcf_qsm_create()
         */
-       s->ser_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SER);
-       sysbus_init_irq(SYS_BUS_DEVICE(s), &s->spi_irq);
-       sysbus_connect_irq(SYS_BUS_DEVICE(s), 0, s->spi_irq);
-
-       s->spi_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SPI);
        sysbus_init_irq(SYS_BUS_DEVICE(s), &s->ser_irq);
-       sysbus_connect_irq(SYS_BUS_DEVICE(s), 1, s->ser_irq);
+       s->ser_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SER);
+       sysbus_connect_irq(SYS_BUS_DEVICE(s), 0, s->ser_irq);
 
+       sysbus_init_irq(SYS_BUS_DEVICE(s), &s->spi_irq);
+       s->spi_irq = mcf_intc_get_qemu_irq(s->intc_dev, s->qivr + IRQ_SPI);
+       sysbus_connect_irq(SYS_BUS_DEVICE(s), 1, s->spi_irq);
        break;
 
        /*

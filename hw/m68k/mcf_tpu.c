@@ -46,6 +46,7 @@ struct mcf_tpu_state {
    uint16_t hsrr1;  // e1a
    uint16_t cpr0;   // e1c
    uint16_t cpr1;   // e1e
+   uint16_t cisr;   // e20
 };
 
 enum {
@@ -60,6 +61,7 @@ enum {
    HSRR1  = 0x1a,
    CPR0   = 0x1c,
    CPR1   = 0x1e,
+   CISR   = 0x20,
 };
 
 #define TYPE_MCF_TPU "mcf-tpu"
@@ -92,6 +94,7 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
     case CFSR2:  return s->cfsr2;
     case CFSR3:  return s->cfsr3;
     case CIER:   return s->cier;
+    case CISR:   return s->cisr;
     case CPR0:   return s->cpr0;
     case CPR1:   return s->cpr1;
     case HSRR0:  return s->hsrr0;
@@ -107,6 +110,49 @@ static uint64_t mcf_tpu_read(void *opaque, hwaddr addr, unsigned size)
 
     return 0;
 }
+
+/*-------------------------------------------------------------------------
+ *
+ * name:        cipr_update
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void cipr_update (mcf_tpu_state *s, uint16_t *cipr_p, uint32_t channel, uint32_t val)
+{
+   uint32_t
+      i;
+   uint16_t
+      old,
+      old_pri,
+      new_pri;
+
+   old = *cipr_p;
+
+   qemu_log("%s %d old: %x new: %x \n", __func__, __LINE__, old, val);
+
+   /*
+    * Check which fields are different
+    */
+   for (i=0; i< 8; i++) {
+      old_pri = (old & 3);
+      new_pri = (val & 3);
+
+      if (old_pri != new_pri) {
+         qemu_log("%s %d old  channel: %d new pri: %d \n", __func__, __LINE__, i + channel, val);
+      }
+
+      old >>= 2;
+      val >>= 2;
+   }
+
+   *cipr_p = val;
+}
+
 
 /*-------------------------------------------------------------------------
  *
@@ -141,11 +187,38 @@ static void mcf_tpu_write(void *opaque, hwaddr addr, uint64_t val, unsigned size
        s->cfsr3 = val;
        break;
 
-    case CIER:  s->cier = val;  break;
-    case CPR0:  s->cpr0 = val;  break;
-    case CPR1:  s->cpr1 = val;  break;
+    case CIER:
+       s->cier = val;
+       break;
+
+    case CISR:
+       s->cisr = val;
+       break;
+
+    case CPR0:
+       cipr_update(s, &s->cpr0, 8, val);
+       break;
+
+    case CPR1:
+       cipr_update(s, &s->cpr1, 0, val);
+       break;
     case HSRR0: s->hsrr0 = val; break;
-    case HSRR1: s->hsrr1 = val; break;
+
+       /*
+        * Write to the service request register.  We collect parms and then
+        * write the register back to 0.
+        */
+    case HSRR1:
+       s->hsrr1 = val;
+       qemu_log("%s %d Clearing HSRR1\n", __func__, __LINE__);
+
+       /*
+        * Make 0 to show we serviced the request
+        */
+       s->hsrr1 = 0;
+
+       break;
+
        /*
         * TPU Interrupt Control Register
         */
@@ -207,7 +280,7 @@ static void mcf_tpu_instance_init(Object *obj)
     SysBusDevice *dev = SYS_BUS_DEVICE(obj);
     mcf_tpu_state *s = MCF_TPU(dev);
 
-    memory_region_init_io(&s->iomem, obj, &mcf_tpu_ops, s, "tpu", 0x40);
+    memory_region_init_io(&s->iomem, obj, &mcf_tpu_ops, s, "tpu", 0x30);
 
     sysbus_init_mmio(dev, &s->iomem);
 }

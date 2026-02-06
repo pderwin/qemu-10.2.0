@@ -114,8 +114,12 @@ qemu_irq mcf_intc_get_qemu_irq(void *opaque, uint32_t vector_number)
 {
    mcf_intc_state
       *s = MCF_INTC(opaque);
+   qemu_irq
+      qemu_irq;
 
-   return s->qemu_irqs[vector_number - 64];
+   qemu_irq = s->qemu_irqs[vector_number - 64];
+
+   return qemu_irq;
 }
 
 /*-------------------------------------------------------------------------

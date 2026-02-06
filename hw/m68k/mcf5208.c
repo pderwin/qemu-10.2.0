@@ -87,9 +87,15 @@ static void mcf5208evb_init(MachineState *machine)
     mcf_qsm_create_mmap(  0xfffc00, intc_dev);
 
     /*
-     * TPU uses 16 interrupts
+     * TPU block
      */
     mcf_tpu_create_mmap(  0xfffe00, intc_dev);
+
+    /*
+     * TPU RAM block
+     */
+    mcf_tpu_ram_create_mmap( 0xffff00 );
+
 
     /* Load firmware */
     if (machine->firmware) {

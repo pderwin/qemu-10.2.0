@@ -51,50 +51,50 @@ struct mcf_intc_state {
 static void mcf_intc_update(mcf_intc_state *s)
 {
    uint32_t
+      i,
       uvn,
       w;
-    uint64_t
-       pending;
-    int i;
-    int best;
-    int best_level;
+   uint64_t
+      pending;
+   int
+      best,
+      best_level;
 
-    best_level = 0;
-    best = -1;
+   best_level = 0;
+   best = -1;
 
-    /*
-     * Process all words of the pending register
-     */
-    for (w=0; w < USER_VECTOR_WORDS; w++) {
+   /*
+    * Process all words of the pending register
+    */
+   for (w=0; w < USER_VECTOR_WORDS; w++) {
 
-       pending = s->pending[w];
+      pending = s->pending[w];
 
-       if (pending) {
+      /*
+       * Scan all 64 bits of the register
+       */
+      for (i = 0; (i < 64) && pending; i++) {
 
-          /*
-           * Scan all 64 bits of the register
-           */
-          for (i = 0; i < 64; i++) {
-             /*
-              * If pending bit is set, and the priority is higher than what has been seen so far...
-              */
-             if ( (pending & (1 << i)) && s->priority[i] >= best_level) {
+         uvn = (w * 64) + i;  // user vector number
 
-                uvn = (w * 64) + i;  // user vector number
+         /*
+          * If pending bit is set, and the priority is higher than what has been seen so far...
+          */
+         if ( (pending & 1) && s->priority[uvn] >= best_level) {
+            best_level = s->priority[uvn];
+            best = uvn;
+         }
 
-                best_level = s->priority[uvn];
-                best = uvn;
-             }
-          }
-       }
-    }
+         pending >>= 1;
+      }
+   }
 
-    /*
-     * User vectors start at number 64
-     */
-    s->active_vector = ((best == -1) ? 24 : (best + 64));
+   /*
+    * User vectors start at number 64
+    */
+   s->active_vector = ((best == -1) ? 24 : (best + 64));
 
-    m68k_set_irq_level(s->cpu, best_level, s->active_vector);
+   m68k_set_irq_level(s->cpu, best_level, s->active_vector);
 }
 
 /*-------------------------------------------------------------------------

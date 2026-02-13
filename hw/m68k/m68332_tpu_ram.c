@@ -9,7 +9,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
-#include "hw/m68k/mcf.h"
+#include "hw/m68k/m68332.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "chardev/char-fe.h"
@@ -20,6 +20,8 @@
 struct mcf_tpu_ram_state {
    SysBusDevice  parent_obj;
    MemoryRegion  iomem;
+
+   void         *tpu_dev;
 
    //
    // Register storage
@@ -51,12 +53,19 @@ static uint64_t mcf_tpu_ram_read(void *opaque, hwaddr addr, unsigned size)
 
     mcf_tpu_ram_state *s = opaque;
 
-    chan = (addr >> 4);
-    wrd  = (addr & 0xf) >> 1;
+    /*
+     * The TCR1 register is mapped onto memory at channel 14 RAM at offset
+     * 0xc.
+     */
+    if (addr == 0xec) {
+       ret = mcf_tpu_tcr1_read(s->tpu_dev);
+    }
+    else {
+       chan = (addr >> 4);
+       wrd  = (addr & 0xf) >> 1;
 
-    ret = s->parm[chan][wrd];
-
-    qemu_log("%s %d addr: %lx ret: %x \n", __func__, __LINE__, addr, ret);
+       ret = s->parm[chan][wrd];
+    }
 
     return ret;
 }
@@ -194,14 +203,18 @@ type_init(mcf_tpu_register);
  * output:
  *
  *-------------------------------------------------------------------------*/
-static DeviceState *mcf_tpu_ram_create( void )
+static DeviceState *mcf_tpu_ram_create( DeviceState *tpu_dev)
 {
+    mcf_tpu_ram_state
+       *s;
     DeviceState *dev;
 
     dev = qdev_new(TYPE_MCF_TPU_RAM);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
-//    mcf_tpu_ram_state *s = MCF_TPU_RAM(dev);
+    s = MCF_TPU_RAM(dev);
+
+    s->tpu_dev = tpu_dev;
 
     return dev;
 }
@@ -218,11 +231,11 @@ static DeviceState *mcf_tpu_ram_create( void )
  * output:
  *
  *-------------------------------------------------------------------------*/
-DeviceState *mcf_tpu_ram_create_mmap(hwaddr base)
+DeviceState *mcf_tpu_ram_create_mmap(hwaddr base, DeviceState *tpu_dev)
 {
     DeviceState *dev;
 
-    dev = mcf_tpu_ram_create();
+    dev = mcf_tpu_ram_create( tpu_dev );
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
 
     return dev;

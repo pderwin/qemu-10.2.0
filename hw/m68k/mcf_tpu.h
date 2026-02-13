@@ -2,27 +2,40 @@
 
 #define NUMBER_TPUS (16)
 
+typedef enum {
+   STATE_IDLE,
+   STATE_INITIALIZING,
+   STATE_RUNNING
+} state_e;
+
 typedef struct {
    void      *s;     // our parent device
-   QEMUTimer *timer;
+
    qemu_irq   irq;
+
+   QEMUTimer *timer;
 
    uint32_t   channel;
    uint32_t   function;
    uint32_t   priority;
    uint32_t   host_sequence_code;
    uint32_t   host_service_request;
-   uint32_t   ier;
-   uint32_t   is_running;
+   state_e    state;
+
+   uint32_t   ier;   // shadow of our bit in CIER
+
 } tpu_t;
+
 
 struct mcf_tpu_state {
    SysBusDevice  parent_obj;
    MemoryRegion  iomem;
    DeviceState  *intc_dev;
 
-   QEMUTimer    *timer;
-   uint32_t      timer_count;
+   tpu_t         tpus[NUMBER_TPUS];
+
+   QEMUTimer    *dump_timer;
+   uint32_t      dump_timer_count;
 
    QEMUTimer    *neg_x_timer;
    uint32_t      neg_x_timer_count;
@@ -31,6 +44,12 @@ struct mcf_tpu_state {
    // Register storage
    //
    uint16_t tpumcr; // e00
+#define TCR1P_SHIFT (13)
+#define TCR1P_MASK  (3 << TCR1P_SHIFT)
+
+#define PSCK_SHIFT (6)
+#define PSCK_MASK  (1 << PSCK_SHIFT)
+
    uint16_t tcr;    // e02
    uint16_t dscr;   // e04
    uint16_t dssr;   // e06

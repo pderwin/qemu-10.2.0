@@ -8,7 +8,7 @@
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qapi/error.h"
-#include "hw/m68k/mcf.h"
+#include "hw/m68k/m68332.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "chardev/char-fe.h"
@@ -29,6 +29,8 @@ serial_recv_event_t serial_recv_events[] = {
    { 300, "vj1000\n" },      // set joig speed to 1000
    { 300, "vm200\n" },       // set max motor speed to 200
    { 300, "rl\n" },          // read limit switches
+//   { 300, "hu\n" },          // head up
+//   { 300, "hd\n" },          // head up
    { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
 //   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
 //   { 300, "di0,-200,0\n" }, // Move left 2500 ticks

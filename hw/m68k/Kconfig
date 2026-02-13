@@ -12,6 +12,13 @@ config MCF5208
     select COLDFIRE
     select PTIMER
 
+config M68332
+    bool
+    default y
+    depends on M68K
+    select COLDFIRE
+    select PTIMER
+
 config NEXTCUBE
     bool
     default y

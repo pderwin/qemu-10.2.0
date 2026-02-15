@@ -8,17 +8,14 @@
  *
  * This code is licensed under the GPL
  */
-
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu/module.h"
 #include "qemu/log.h"
 #include "cpu.h"
 #include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "hw/m68k/m68332.h"
 #include "hw/qdev-properties.h"
-#include "qom/object.h"
 
 #define TYPE_MCF_INTC "m68332-intc"
 OBJECT_DECLARE_SIMPLE_TYPE(mcf_intc_state, MCF_INTC)

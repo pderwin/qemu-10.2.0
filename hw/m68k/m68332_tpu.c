@@ -541,6 +541,8 @@ static void tpu_maybe_start (mcf_tpu_state *s, tpu_t *tp)
    /*
     * Need to set timer for 5 uSec to simulate initialization and clear the HSRRx bits
     */
+   qemu_log("\n%s %d [ TPU %d ] set timer for: %ld (5 uSec) \n", __func__, __LINE__, tp->channel, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 5000);
+
    timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 5000);
 
    tp->state = STATE_INITIALIZING;
@@ -697,6 +699,13 @@ static void tpu_timer_cb(void *opaque)
 //   qemu_log("TIMER EXPIRED: channel: %d state: %d \n", tp->channel, tp->state);
 
    /*
+    * If TPU is marked as stopped, then just return.  No need to re-start the timer.
+    */
+   if (tp->state == STATE_IDLE) {
+      return;
+   }
+
+   /*
     * check if we're initializing
     */
    if (tp->state == STATE_INITIALIZING) {
@@ -754,7 +763,7 @@ static void tpu_timer_cb(void *opaque)
    if (tp->function == FUNCTION_PWM) {
       nSecs = calculate_pwm_delay(s, tp);
 
-      qemu_log("\n%s %d PERIOD: %d IER: %d \n", __func__, __LINE__, nSecs, tp->ier);
+      qemu_log("\n%s %d [ TPU %d ] nSecs: %d IER: %d \n", __func__, __LINE__, tp->channel, nSecs, tp->ier);
       timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + nSecs );
    }
 }

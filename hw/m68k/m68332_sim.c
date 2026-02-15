@@ -7,22 +7,16 @@
  */
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "qemu/module.h"
+#include "qemu/timer.h"
 #include "qapi/error.h"
 #include "hw/m68k/m68332.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
-#include "chardev/char-fe.h"
-#include "qom/object.h"
-#include "hw/m68k/mcf.h"
 
 struct mcf_sim_state {
    SysBusDevice parent_obj;
    MemoryRegion iomem;
    QEMUTimer *slock_timer;
-   CharFrontend chr;
 
    /*
     * Registers
@@ -156,17 +150,12 @@ static void mcf_sim_realize(DeviceState *dev, Error **errp)
     s->slock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, slock_timer_cb, s);
 }
 
-static const Property mcf_sim_properties[] = {
-    DEFINE_PROP_CHR("chardev", mcf_sim_state, chr),
-};
-
 static void mcf_sim_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->realize = mcf_sim_realize;
     device_class_set_legacy_reset(dc, mcf_sim_reset);
-    device_class_set_props(dc, mcf_sim_properties);
     set_bit(DEVICE_CATEGORY_INPUT, dc->categories);
 }
 

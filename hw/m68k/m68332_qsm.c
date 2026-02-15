@@ -26,13 +26,15 @@ serial_recv_event_t serial_recv_events[] = {
    { 300, "IM\n" },          // cause machine to reboot
    { 300, "vb1\n" },         // turn on verbose
    { 300, "CT\n" },          // ask for copyright information
-   { 300, "vj1000\n" },      // set joig speed to 1000
-   { 300, "vm200\n" },       // set max motor speed to 200
+   { 300, "vj1000\n" },      // set jog speed to 1000
+   { 300, "vm400\n" },       // set max motor speed to 200
    { 300, "rl\n" },          // read limit switches
+//   { 300, "xi50\n" },        //
 //   { 300, "hu\n" },          // head up
 //   { 300, "hd\n" },          // head up
-   { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
-//   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
+//   { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
+//   { 300, "da-2500,0,0\n" }, // Move left 2500 ticks
+   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
 //   { 300, "di0,-200,0\n" }, // Move left 2500 ticks
 //   { 400, "di0,200,0\n" }, // failed to schedule a move
 //   { 300, "di0,0,-100\n" }, // Move left 2500 ticks
@@ -264,8 +266,6 @@ static void ser_update_irq(mcf_qsm_state *s)
    if ( (s->scsr & SCSR_RDRF) && (s->sccr1 & SCCR1_RIE)) {
       recv_irq = 1;
    }
-
-   qemu_log("%s %d r: %d x: %d \n", __func__, __LINE__, recv_irq, xmit_irq);
 
    qemu_set_irq(s->ser_irq, recv_irq || xmit_irq);
 }

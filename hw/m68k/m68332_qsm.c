@@ -32,9 +32,9 @@ serial_recv_event_t serial_recv_events[] = {
 //   { 300, "xi50\n" },        //
 //   { 300, "hu\n" },          // head up
 //   { 300, "hd\n" },          // head up
-//   { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
+   { 300, "di-2500,0,0\n" }, // Move left 2500 ticks
 //   { 300, "da-2500,0,0\n" }, // Move left 2500 ticks
-   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
+//   { 300, "di2500,0,0\n" }, // Move left 2500 ticks
 //   { 300, "di0,-200,0\n" }, // Move left 2500 ticks
 //   { 400, "di0,200,0\n" }, // failed to schedule a move
 //   { 300, "di0,0,-100\n" }, // Move left 2500 ticks

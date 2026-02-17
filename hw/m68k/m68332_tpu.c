@@ -26,16 +26,17 @@ static uint16_t memory_read_16     (uint32_t addr);
 static void     neg_x_timer_cb     (void *opaque);
 static void     ticr_write         (mcf_tpu_state *s, uint32_t val);
 static void     tpu_assert_irq     (mcf_tpu_state *s, uint32_t channel);
+static void     tpu_dump           (void *opaque);
 static void     tpu_dump_timer_cb  (void *opaque);
 static void     tpu_maybe_start    (mcf_tpu_state *s, tpu_t *tp);
 
 static const char *function_strs[] = {
-   "str_0",  //
-   "str_1",  //
-   "str_2",  //
-   "str_3",  //
-   "str_4",  //
-   "str_5",  //
+   "",  //
+   "",  //
+   "",  //
+   "",  //
+   "",  //
+   "",  //
    "QDEC",   //  6 - quadrature decoder
    "SPWM",   //  7 - synchronized PWM
    "DIO",    //  8 - discrete I/O
@@ -238,7 +239,9 @@ static void hsrr_update (mcf_tpu_state *s, uint16_t *hsrr_p, uint32_t first_chan
 
       host_service_request = val & 0x3;
 
-      tp->host_service_request = host_service_request;
+      if (host_service_request) {
+         tp->host_service_request = host_service_request;
+      }
 
       /*
        * If request is non-zero, then the TPU may to run.
@@ -545,6 +548,8 @@ static void tpu_maybe_start (mcf_tpu_state *s, tpu_t *tp)
 
    timer_mod(tp->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 5000);
 
+   tpu_dump(s);
+
    tp->state = STATE_INITIALIZING;
 }
 
@@ -727,10 +732,10 @@ static void tpu_timer_cb(void *opaque)
       /*
        * If the host service request is non-zero and ier, then post an interrupt.
        */
-      if (tp->host_service_request && tp->ier) {
-         qemu_log("ASSERT INITIALIZING IRQ: channel: %d \n", tp->channel);
-         qemu_set_irq(tp->irq, 1);
-      }
+//      if (tp->host_service_request && tp->ier) {
+//         qemu_log("ASSERT INITIALIZING IRQ: channel: %d \n", tp->channel);
+//         qemu_set_irq(tp->irq, 1);
+//      }
 
       tp->state = STATE_RUNNING;
    }
@@ -988,7 +993,11 @@ static void neg_x_timer_cb(void *opaque)
       qemu_log_start_line("TPU");
       qemu_log("neg_x_timer set \n");
 
-      tpu_assert_irq(s, 7);
+      /*
+       * 9 is positive X isr
+       * 10 is negative X isr
+       */
+      tpu_assert_irq(s, 10);
    }
 
    /*
@@ -997,6 +1006,75 @@ static void neg_x_timer_cb(void *opaque)
    timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        tpu_dump
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
+static void tpu_dump(void *opaque)
+{
+   uint32_t
+      i,
+      j,
+      trp;
+   mcf_tpu_state
+      *s = opaque;
+   tpu_t
+      *tp;
+   static FILE
+      *fp = NULL;
+
+   if (fp == NULL) {
+      if ((fp = fopen("tpu_dump","w")) == NULL) {
+         printf("Error opening dump file \n");
+         exit(1);
+      }
+   }
+
+   qemu_log_start_line("TPU");
+   qemu_log("DUMP FILE WRITTEN\n");
+
+   {
+      uint64_t ts_usec = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
+
+      fprintf(fp, "\n\nDump occurs at: %5ld.%03d \n\n", (ts_usec / 1000), (int) (ts_usec % 1000) );
+   }
+
+   fprintf(fp, " # | PRI | func  | HSRQ | HSEQ | IER |\n");
+
+   tp = s->tpus;
+
+   trp = 0xffff00;
+
+   for (i=0; i<16; i++,tp++) {
+      fprintf(fp, "%2d |",  i);
+      fprintf(fp, "  %d  |",  tp->priority);
+      fprintf(fp, " %5s |", function_strs[tp->function]);
+      fprintf(fp, "  %2d  |", tp->host_service_request);
+      fprintf(fp, "  %2d  | ", tp->host_sequence_code);
+      fprintf(fp, " %d  | ", tp->ier);
+      fprintf(fp, "  %x: ", trp);
+
+      /*
+       * Read the TPU RAM for this TPU.
+       */
+      for(j=0; j < 8; j++) {
+         fprintf(fp, "%04x ", memory_read_16(trp));
+         trp += 2;
+      }
+
+      fprintf(fp, "\n");
+   }
+
+   fflush(fp);
+
+}
 
 
 
@@ -1013,68 +1091,31 @@ static void neg_x_timer_cb(void *opaque)
  *-------------------------------------------------------------------------*/
 static void tpu_dump_timer_cb(void *opaque)
 {
-   uint32_t
-      i,
-      j,
-      trp;
    mcf_tpu_state
       *s = opaque;
-   tpu_t
-      *tp;
-   FILE
-      *fp;
 
    if (s->dump_timer_count++ < 40) {
-
-      /*
+       /*
        * Set timer for 100 mSecs later.
        */
       timer_mod(s->dump_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
       return;
    }
 
-   if ((fp = fopen("tpu_dump","w")) == NULL) {
-      printf("Error opening dump file \n");
-      exit(1);
-   }
-
-   qemu_log_start_line("TPU");
-   qemu_log("DUMP FILE WRITTEN\n");
-
-   {
-      uint64_t ts_usec = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
-
-      fprintf(fp, "\n\nDump occurs at: %5ld.%03d \n\n", (ts_usec / 1000), (int) (ts_usec % 1000) );
-   }
-
-   fprintf(fp, " # | PRI | func  | HSRQ | HSEQ |\n");
-
-   tp = s->tpus;
-
-   trp = 0xffff00;
-
-   for (i=0; i<16; i++,tp++) {
-      fprintf(fp, "%2d |",  i);
-      fprintf(fp, "  %d  |",  tp->priority);
-      fprintf(fp, " %5s |", function_strs[tp->function]);
-      fprintf(fp, "  %2d  |", tp->host_service_request);
-      fprintf(fp, "  %2d  | ", tp->host_sequence_code);
-      fprintf(fp, "  %x: ", trp);
-
-      /*
-       * Read the TPU RAM for this TPU.
-       */
-      for(j=0; j < 8; j++) {
-         fprintf(fp, "%04x ", memory_read_16(trp));
-         trp += 2;
-      }
-
-      fprintf(fp, "\n");
-   }
-
-   fclose(fp);
+   tpu_dump(s);
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        memory_read_16
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 static uint16_t memory_read_16 (uint32_t addr)
 {
    uint16_t
@@ -1088,6 +1129,17 @@ static uint16_t memory_read_16 (uint32_t addr)
    return bswap_16(val);
 }
 
+/*-------------------------------------------------------------------------
+ *
+ * name:        tpu_assert_irq
+ *
+ * description:
+ *
+ * input:
+ *
+ * output:
+ *
+ *-------------------------------------------------------------------------*/
 static void tpu_assert_irq(mcf_tpu_state *s, uint32_t channel)
 {
    tpu_t

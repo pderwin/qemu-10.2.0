@@ -533,6 +533,7 @@ static void tpu_maybe_start (mcf_tpu_state *s, tpu_t *tp)
       return;
    }
 
+   qemu_log_start_line("\nTPU");
    qemu_log("  | RUNNING  | channel: %d function: %d (%s) request: %d sequence: %x priority: %d ier: %d\n\n",
             tp->channel,
             tp->function, function_strs[tp->function],
@@ -824,7 +825,7 @@ static void mcf_tpu_realize(DeviceState *dev, Error **errp)
     * Timer for channel 1 interrupts
     */
    s->neg_x_timer   = timer_new_ns(QEMU_CLOCK_VIRTUAL, neg_x_timer_cb, s);
-   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(50) );
 
    s->neg_x_timer_count = 0;
 
@@ -986,24 +987,24 @@ static void neg_x_timer_cb(void *opaque)
    /*
     * If more than 3 seconds, then simulate TPU channel 1 interrupts.
     */
-   if (s->neg_x_timer_count == 30) {
+   if (s->neg_x_timer_count >= 60 && ((s->neg_x_timer_count % 6) == 0) ) {
 
 
 
-      qemu_log_start_line("TPU");
+      qemu_log_start_line("\nTPU");
       qemu_log("neg_x_timer set \n");
 
       /*
        * 9 is positive X isr
        * 10 is negative X isr
        */
-      tpu_assert_irq(s, 10);
+      tpu_assert_irq(s, 1);
    }
 
    /*
     * Set timer for 100 mSecs later.
     */
-   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(100) );
+   timer_mod(s->neg_x_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + TPU_TIMER_INTERVAL_MS(50) );
 }
 
 /*-------------------------------------------------------------------------
